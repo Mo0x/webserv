@@ -1,0 +1,62 @@
+🧠 Developer B: High-Level Logic & Features
+1. Design and Parse Configuration File Options
+
+    Extend the config parser to support:
+
+        Server blocks with multiple settings
+
+        Routes with directives (allowed methods, root, autoindex, etc.)
+
+        CGI execution settings
+
+2. Implement Route Matching and Static File Serving
+
+    Map URLs to file system paths based on route blocks.
+
+    Return appropriate status if file not found or method not allowed.
+
+    Resolve relative paths securely.
+
+3. Serve Index Files for Directories
+
+    If the request is for a directory, serve the default index file (like index.html) if it exists.
+
+4. Implement Directory Listing Feature
+
+    If autoindex is enabled in a route, generate and serve an HTML page with file links.
+
+5. Execute CGI Scripts via fork/execve
+
+    Detect CGI extensions (e.g., .php) and:
+
+        Fork a child process
+
+        Set up stdin, stdout via pipes
+
+        Execute CGI with the proper environment and arguments
+
+    Capture and parse the CGI response.
+
+6. Unchunk Body for CGI Input, Handle CGI Output
+
+    Convert chunked request body to plain before passing to CGI.
+
+    Read CGI response (possibly chunked or unbounded) and forward to client.
+
+7. Handle POST File Uploads
+
+    Parse multipart/form-data or raw POST body.
+
+    Store uploaded file to the destination specified in config.
+
+    Enforce upload limits per route.
+
+8. Enforce Max Body Size Per Route
+
+    Reject requests that exceed allowed body size with a 413 Payload Too Large.
+
+9. Add Redirect and Allowed Method Rules
+
+    Respond with a 3xx redirect if defined in config.
+
+    Respond with 405 Method Not Allowed if the method isn't permitted.
