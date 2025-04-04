@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/01 12:47:21 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/01 12:48:55 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/04 15:13:30 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,7 +20,7 @@ class Server
 	public:
 	Server();
 	Server(const Server &src);
-	Server &operator=(const server  &src);
+	Server &operator=(const server &src);
 	~Server();
 };
 
