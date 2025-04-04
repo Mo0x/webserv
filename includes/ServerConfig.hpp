@@ -26,6 +26,7 @@ class ServerConfig
 	std::string					m_servername; //optional
 	std::map<int, std::string>	m_error_pages;
 	std::vector<LocationConfig>	m_locations;
+	size_t 						m_clientMaxBodySize;
 
 	public:
 
