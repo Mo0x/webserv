@@ -1,6 +1,9 @@
 NAME = ./webserv
 CXX = c++
-SRCS =	./srcs/main.cpp
+SRCS =	./srcs/main.cpp \
+		./srcs/server/Server.cpp \
+		./srcs/cfg/Config.cpp \
+		./srcs/utils/Logger.cpp
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes
