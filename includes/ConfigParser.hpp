@@ -1,5 +1,5 @@
-#ifndef CONFITPARSER_HPP
-#define CONFITPARSER_HPP
+#ifndef CONFIGPARSER_HPP
+#define CONFIGPARSER_HPP
 
 #include "ServerConfig.hpp"
 #include <vector>
@@ -11,8 +11,8 @@
 class ConfigParser
 {
 	private:
-	std::string _filePath;
-	std::vector<ServerConfig> _servers;
+	std::string m_filePath;
+	std::vector<ServerConfig> m_servers;
 
 	void parse();                    // Parses entire file
 	void parseServer(std::istream&); // Parses a single `server` block
@@ -25,8 +25,9 @@ class ConfigParser
 	ConfigParser(const ConfigParser &src);
 	ConfigParser &operator=(const ConfigParser &src);
 	~ConfigParser();
-	ConfigParser(const std::string& path);
-	const std::vector<ServerConfig>& getServers() const;
+
+	ConfigParser(const std::string &path);
+	const std::vector<ServerConfig> &getServers() const;
 };
 
 #endif
