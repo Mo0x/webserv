@@ -24,7 +24,7 @@ class ConfigParser
 	ServerConfig parseServerBlock(const std::vector<Token>& tokens, size_t &current);
 
 	public:
-	ConsfigParser();
+	ConfigParser();
 	ConfigParser(const std::string &path);
 	ConfigParser(const ConfigParser &src);
 	ConfigParser &operator=(const ConfigParser &src);

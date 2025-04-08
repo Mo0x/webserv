@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 
 ConfigParser::ConfigParser() : m_filePath("")
 {
@@ -53,7 +54,9 @@ void ConfigParser::parse()
             current++;  // Consomme le mot-clé 'server'
             if (current >= tokens.size() || tokens[current].value != "{")
             {
-                throw std::runtime_error("Attendu '{' après 'server' à la ligne " + std::to_string(tokens[current].line));
+                std::ostringstream oss;
+                oss << "Attendu '{' après 'server' à la ligne " << tokens[current].line;
+                throw std::runtime_error(oss.str());
             }
             current++;  // Consomme '{'
             ServerConfig server = parseServerBlock(tokens, current);
@@ -61,11 +64,12 @@ void ConfigParser::parse()
         }
         else
         {
-            throw std::runtime_error("Jeton inattendu : " + tokens[current].value + " à la ligne " + std::to_string(tokens[current].line));
+            std::ostringstream oss;
+            oss << "Jeton inattendu : " << tokens[current].value << " à la ligne " << tokens[current].line;
+            throw std::runtime_error(oss.str());
         }
     }
 }
-
 ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, size_t &current)
 {
     ServerConfig server;
@@ -95,7 +99,9 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             }
             if (current >= tokens.size() || tokens[current].value != ";")
             {
-                throw std::runtime_error("Attendu ';' après la directive 'listen' à la ligne " + std::to_string(tokens[current].line));
+                std::ostringstream oss;
+                oss << "Attendu ';' après la directive 'listen' à la ligne " << tokens[current].line;
+                throw std::runtime_error(oss.str());
             }
             current++;  // Consomme ';'
         }
@@ -164,6 +170,5 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
         throw std::runtime_error("Manque '}' de fermeture dans le bloc server");
     }
     current++;  // Consomme '}'
-    
     return (server);
 }
