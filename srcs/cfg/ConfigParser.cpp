@@ -70,6 +70,7 @@ void ConfigParser::parse()
         }
     }
 }
+
 ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, size_t &current)
 {
     ServerConfig server;
@@ -127,13 +128,16 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             }
             int code = std::atoi(tokens[current].value.c_str());
             current++;
-            server.addErrorPage(code, tokens[current].value);
+            std::string path = tokens[current].value;
             current++;
             if (current >= tokens.size() || tokens[current].value != ";")
             {
-                throw std::runtime_error("Attendu ';' après la directive 'error_page'");
+                std::ostringstream oss;
+                oss << "Attendu ';' après la directive 'error_page' à la ligne " << tokens[current - 1].line;
+                throw std::runtime_error(oss.str());
             }
-            current++;  // Consomme ';'
+            server.addErrorPage(code, path);
+            current++;  // consume ';'
         }
         else if (directive == "client_max_body_size")
         {
