@@ -8,7 +8,6 @@ SRCS =	./srcs/main.cpp \
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes
 CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 -I$(INCDIRS)
-LDFLAGS = -no-pie
 
 all : $(NAME)
 
