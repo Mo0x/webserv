@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:35:57 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/08 16:43:54 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/10 17:08:26 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -22,7 +22,7 @@ class ServerSocket
 	unsigned short	m_port;
 	std::string		m_host;
 
-	ServerSocker &operator=(const ServerSocker &src);
+	ServerSocket &operator=(const ServerSocket &src);
 
 	void setNonBlocking();
 	void bindSocket();
@@ -37,7 +37,7 @@ class ServerSocket
 	//get
 	int	getFd() const;
 	unsigned short	getPort() const;
-	const std::string &Host() const;
+	const std::string &getHost() const;
 
 	//set
 	void setup(); //does socket(), bind(), listen();

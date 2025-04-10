@@ -6,14 +6,28 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/08 17:43:02 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/10 17:10:35 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ServerSocket.hpp"
 
+#include <stdexcept>      // std::runtime_error
+#include <sstream>        // std::ostringstream
+#include <string>         // std::string
+#include <cstring>        // std::memset, std::strerror
+#include <cerrno>         // errno
+
+// Socket and system includes
+#include <unistd.h>       // close()
+#include <fcntl.h>        // fcntl(), F_GETFL, F_SETFL, O_NONBLOCK
+#include <sys/types.h>
+#include <sys/socket.h>   // socket(), bind(), listen(), setsockopt()
+#include <netinet/in.h>   // sockaddr_in, htons()
+#include <arpa/inet.h>    // inet_addr()
+
 ServerSocket::ServerSocket() :
-	m_fd(-1), m_port(0), m_host(127.0.0.1)
+	m_fd(-1), m_port(0), m_host("127.0.0.1")
 {
 	return ;
 }

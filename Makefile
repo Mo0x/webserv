@@ -3,7 +3,8 @@ CXX = c++
 SRCS =	./srcs/main.cpp \
 		./srcs/cfg/ConfigLexer.cpp \
 		./srcs/cfg/ConfigParser.cpp \
-		./srcs/cfg/ServerConfig.cpp
+		./srcs/cfg/ServerConfig.cpp \
+		./srcs/server/ServerSocket.cpp
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes
