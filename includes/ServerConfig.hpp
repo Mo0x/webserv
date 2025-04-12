@@ -16,6 +16,8 @@ struct LocationConfig
     std::string uploadPath;                   // "/tmp/uploads"
     std::string cgiPath;                      // "/usr/bin/php-cgi"
     std::string cgiExtension;                 // ".php"
+	
+	LocationConfig();
 };
 
 class ServerConfig
