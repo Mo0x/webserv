@@ -21,7 +21,7 @@ class ConfigParser
 	//static std::string trim(const std::string& line);
 	//static std::vector<std::string> split(const std::string& line);
 	// Recursively parses a server block from tokens.
-	//ServerConfig parseServerBlock(const std::vector<Token>& tokens, size_t &current);
+	ServerConfig parseServerBlock(const std::vector<Token>& tokens, size_t &current);
 	
 	// NEW: Parses a location block (route configuration) from the tokens.
     // This will process directives like allowedMethods, root, index, autoindex,

@@ -99,7 +99,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             current++;
             if (current < tokens.size())
             {
-                server.setPort(std::stoi(tokens[current].value));
+                server.setPort(atoi(tokens[current].value.c_str()));
                 current++;
             }
             if (tokens[current].value == ";")
@@ -125,7 +125,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             current++;
             if (current < tokens.size())
             {
-                server.setClientMaxBodySize(static_cast<size_t>(std::stoul(tokens[current].value)));
+                server.setClientMaxBodySize(static_cast<size_t>(strtoul(tokens[current].value.c_str(), NULL, 10)));
                 current++;
             }
             if (tokens[current].value == ";")

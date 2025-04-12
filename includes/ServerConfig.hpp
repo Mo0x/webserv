@@ -17,7 +17,7 @@ struct LocationConfig
     std::string cgiPath;                      // "/usr/bin/php-cgi"
     std::string cgiExtension;                 // ".php"
 	
-	LocationConfig();
+	LocationConfig() : autoindex(false) { }
 };
 
 class ServerConfig
