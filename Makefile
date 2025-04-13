@@ -4,7 +4,10 @@ SRCS =	./srcs/main.cpp \
 		./srcs/cfg/ConfigLexer.cpp \
 		./srcs/cfg/ConfigParser.cpp \
 		./srcs/cfg/ServerConfig.cpp \
-		./srcs/server/ServerSocket.cpp
+		./srcs/server/ServerSocket.cpp \
+		./srcs/utils/MultipartParser.cpp \
+		./srcs/utils/FileUploadHandler.cpp
+
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes
