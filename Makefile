@@ -3,12 +3,12 @@ CXX = c++
 SRCS =	./srcs/main.cpp \
 		./srcs/cfg/ConfigLexer.cpp \
 		./srcs/cfg/ConfigParser.cpp \
-		./srcs/cfg/ServerConfig.cpp
+		./srcs/cfg/ServerConfig.cpp \
+		./srcs/server/ServerSocket.cpp
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes
 CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 -I$(INCDIRS)
-LDFLAGS = -no-pie
 
 all : $(NAME)
 
