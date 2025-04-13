@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/10 17:10:35 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/13 18:30:50 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,8 +23,9 @@
 #include <fcntl.h>        // fcntl(), F_GETFL, F_SETFL, O_NONBLOCK
 #include <sys/types.h>
 #include <sys/socket.h>   // socket(), bind(), listen(), setsockopt()
-#include <netinet/in.h>   // sockaddr_in, htons()
-#include <arpa/inet.h>    // inet_addr()
+#include <netdb.h> // getaddrinfo, addrinfo, gai_strerror
+
+// Setup: socket() → fcntl() → setsockopt() → getaddrinfo() → bind() → listen()
 
 ServerSocket::ServerSocket() :
 	m_fd(-1), m_port(0), m_host("127.0.0.1")
@@ -47,7 +48,10 @@ ServerSocket::ServerSocket(const ServerSocket& other)
 ServerSocket::~ServerSocket()
 {
 	if (m_fd != -1)
+	{
 		close(m_fd);
+		m_fd = -1;
+	}
 }
 
 ServerSocket& ServerSocket::operator=(const ServerSocket& other)
@@ -104,19 +108,35 @@ void ServerSocket::setNonBlocking()
 
 void ServerSocket::bindSocket()
 {
-	struct sockaddr_in addr;
-	std::memset(&addr, 0, sizeof(addr));
+    struct addrinfo hints;
+    struct addrinfo* res = NULL;
 
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(m_port);
-	addr.sin_addr.s_addr = inet_addr(m_host.c_str());
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET; // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE; // For binding
 
-	if (bind(m_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-	{
-		std::ostringstream oss;
-		oss << "bind() failed on " << m_host << ":" << m_port << " - " << strerror(errno);
-		throw std::runtime_error(oss.str());
-	}
+    std::string portStr;
+    std::ostringstream oss;
+    oss << m_port;
+    portStr = oss.str();
+
+    int ret = getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &res);
+    if (ret != 0)
+    {
+        throw std::runtime_error("getaddrinfo() failed: " + std::string(gai_strerror(ret)));
+    }
+
+    // Bind the socket
+    if (bind(m_fd, res->ai_addr, res->ai_addrlen) < 0)
+    {
+        freeaddrinfo(res);
+        std::ostringstream err;
+        err << "bind() failed on " << m_host << ":" << m_port << " - " << strerror(errno);
+        throw std::runtime_error(err.str());
+    }
+
+    freeaddrinfo(res);
 }
 
 
@@ -124,4 +144,9 @@ void ServerSocket::listenSocket()
 {
 	if (listen(m_fd, 128) < 0)
 		throw std::runtime_error("listen() failed: " + std::string(strerror(errno)));
+}
+
+bool ServerSocket::isValid() const
+{
+	return m_fd != -1;
 }

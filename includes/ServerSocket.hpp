@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:35:57 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/10 17:08:26 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/13 18:10:48 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -41,6 +41,7 @@ class ServerSocket
 
 	//set
 	void setup(); //does socket(), bind(), listen();
+	bool isValid() const;
 };
 
 #endif
