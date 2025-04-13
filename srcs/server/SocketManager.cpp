@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/13 19:29:47 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/13 19:32:03 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -83,7 +83,7 @@ void SocketManager::run()
 				if (client_fd >= 0)
 				{
 					std::cout << "Accepted new client: fd " << client_fd << std::endl;
-					//here set non blocking? + add to poll
+					//here ?? 
 				}
 				else
 				{
