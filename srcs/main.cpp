@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/10 17:05:01 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/16 19:05:12 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -78,7 +78,8 @@ int main(int argc, char **argv)
 }
  */
 
- #include "ServerSocket.hpp"
+#include "ServerSocket.hpp"
+#include "SocketManager.hpp"
 #include <iostream>
 #include <csignal>
 #include <unistd.h>
@@ -92,24 +93,9 @@ void handleSignal(int)
 
 int main()
 {
-    try
-    {
-        std::signal(SIGINT, handleSignal); // Handle Ctrl+C
-
-        ServerSocket server("127.0.0.1", 8080);
-        std::cout << "Server listening on " << server.getHost() << ":" << server.getPort() << "\n";
-        std::cout << "Press Ctrl+C to stop.\n";
-
-        while (g_running)
-            pause(); // Wait for signals
-
-        std::cout << "Shutting down.\n";
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
-        return 1;
-    }
-
+	std::cout << "Starting webserv now..." << std::endl;
+    SocketManager sm;
+    sm.addServer("127.0.0.1", 8080);
+    sm.run();
     return 0;
 }
