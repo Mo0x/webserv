@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/16 19:24:32 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/16 19:38:51 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -69,98 +69,94 @@ void SocketManager::initPoll()
 		m_pollfds.push_back(pfd);
 	}
 }
+
 void SocketManager::run()
 {
-    initPoll();
-    std::cout << "Starting poll() loop on " << m_pollfds.size() << " sockets." << std::endl;
+	initPoll();
+	std::cout << "Starting poll() loop on " << m_pollfds.size() << " sockets." << std::endl;
 
-    while (true)
-    {
+	while (true)
+	{
 		std::cout << "[DEBUG] Polling..." << std::endl;
-        int ret = poll(&m_pollfds[0], m_pollfds.size(), -1);
+		int ret = poll(&m_pollfds[0], m_pollfds.size(), -1);
 		std::cout << "[DEBUG] poll() returned: " << ret << std::endl;
 
-		for (size_t j = 0; j < m_pollfds.size(); ++j)
+		if (ret < 0)
 		{
-			std::cout << "[DEBUG] fd: " << m_pollfds[j].fd
-					<< " events: " << m_pollfds[j].events
-					<< " revents: " << m_pollfds[j].revents << std::endl;
+			perror("poll() failed");
+			break;
 		}
-        if (ret < 0)
-        {
-            perror("poll() failed");
-            break;
-        }
 
-        for (size_t i = 0; i < m_pollfds.size(); ++i)
-        {
-            int fd = m_pollfds[i].fd;
+		for (size_t i = 0; i < m_pollfds.size(); ++i)
+		{
+			int fd = m_pollfds[i].fd;
 
-            if (m_pollfds[i].revents & POLLIN)
-            {
-                // Check if it's a server socket
-                if (m_serverFds.count(fd))
-                {
-                    int client_fd = accept(fd, NULL, NULL);
-                    if (client_fd >= 0)
-                    {
-                        std::cout << "Accepted new client: fd " << client_fd << std::endl;
+			std::cout << "[DEBUG] fd: " << fd
+			          << " events: " << m_pollfds[i].events
+			          << " revents: " << m_pollfds[i].revents << std::endl;
 
-                        // Set client_fd to non-blocking
-                        int flags = fcntl(client_fd, F_GETFL, 0);
-                        fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+			if (m_pollfds[i].revents & POLLIN)
+			{
+				// 🔍 Server socket: accept connection
+				if (m_serverFds.count(fd))
+				{
+					int client_fd = accept(fd, NULL, NULL);
+					if (client_fd >= 0)
+					{
+						std::cout << "Accepted new client: fd " << client_fd << std::endl;
 
-                        // Add to poll list
-                        struct pollfd client_poll;
-                        client_poll.fd = client_fd;
-                        client_poll.events = POLLIN;
-                        client_poll.revents = 0;
-                        m_pollfds.push_back(client_poll);
+						int flags = fcntl(client_fd, F_GETFL, 0);
+						fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
 
-                        // Optionally track buffer
-                        m_clientBuffers[client_fd] = "";
-                    }
-                    else
-                    {
-                        perror("accept() failed");
-                    }
-                }
-                else  // It's a client socket
-                {
-                    char buffer[1024];
-                    int bytes = recv(fd, buffer, sizeof(buffer), 0);
+						struct pollfd client_poll;
+						client_poll.fd = client_fd;
+						client_poll.events = POLLIN;
+						client_poll.revents = 0;
+						m_pollfds.push_back(client_poll);
 
-                    if (bytes <= 0)
-                    {
-                        std::cout << "Client disconnected: fd " << fd << std::endl;
-                        close(fd);
-                        m_clientBuffers.erase(fd);
-                        m_pollfds.erase(m_pollfds.begin() + i);
-                        --i; // Adjust index because we erased an element
-                    }
-                    else
-                    {
-                        m_clientBuffers[fd].append(buffer, bytes);
-                        std::cout << "Received from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
+						m_clientBuffers[client_fd] = "";
+						std::cout << "[DEBUG] Client fd " << client_fd << " added to poll()" << std::endl;
+					}
+					else
+					{
+						perror("accept() failed");
+					}
+				}
+				else
+				{
+					// 📨 Client socket: read and respond
+					char buffer[1024];
+					int bytes = recv(fd, buffer, sizeof(buffer), 0);
 
-                        // Send basic 200 OK response
-                        std::string response =
-                            "HTTP/1.1 200 OK\r\n"
-                            "Content-Length: 13\r\n"
-                            "Content-Type: text/plain\r\n"
-                            "\r\n"
-                            "Hello, world!";
+					if (bytes <= 0)
+					{
+						std::cout << "Client disconnected: fd " << fd << std::endl;
+						close(fd);
+						m_clientBuffers.erase(fd);
+						m_pollfds.erase(m_pollfds.begin() + i);
+						--i;
+					}
+					else
+					{
+						m_clientBuffers[fd].append(buffer, bytes);
+						std::cout << "Received from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
 
-                        send(fd, response.c_str(), response.size(), 0);
+						std::string response =
+							"HTTP/1.1 200 OK\r\n"
+							"Content-Length: 13\r\n"
+							"Content-Type: text/plain\r\n"
+							"\r\n"
+							"Hello, world!";
 
-                        // Close and clean up client connection
-                        close(fd);
-                        m_clientBuffers.erase(fd);
-                        m_pollfds.erase(m_pollfds.begin() + i);
-                        --i;
-                    }
-                }
-            }
-        }  // end for
-    }      // end while
+						send(fd, response.c_str(), response.size(), 0);
+
+						close(fd);
+						m_clientBuffers.erase(fd);
+						m_pollfds.erase(m_pollfds.begin() + i);
+						--i;
+					}
+				}
+			}
+		}
+	}
 }
