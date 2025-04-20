@@ -6,7 +6,8 @@ SRCS =	./srcs/main.cpp \
 		./srcs/cfg/ServerConfig.cpp \
 		./srcs/server/ServerSocket.cpp \
 		./srcs/server/SocketManager.cpp \
-		./srcs/utils/request_parser.cpp
+		./srcs/utils/request_parser.cpp \
+		./srcs/utils/file_utils.cpp
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes

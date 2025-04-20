@@ -6,13 +6,14 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/20 19:55:41 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/20 20:23:21 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "SocketManager.hpp"
 #include "request_parser.hpp"
 #include "request_reponse_struct.hpp"
+#include "file_utils.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <stdexcept>  // std::runtime_error
@@ -20,6 +21,8 @@
 #include <sys/socket.h> //accept()
 #include <cstdio>
 #include <fcntl.h> 
+#include <sstream> // for std::ostringstream
+
 
 SocketManager::SocketManager()
 {
@@ -99,7 +102,6 @@ void SocketManager::run()
 
 			if (m_pollfds[i].revents & POLLIN)
 			{
-				// 🔍 Server socket: accept connection
 				if (m_serverFds.count(fd))
 				{
 					int client_fd = accept(fd, NULL, NULL);
@@ -126,7 +128,6 @@ void SocketManager::run()
 				}
 				else
 				{
-					// 📨 Client socket: read and respond
 					char buffer[1024];
 					int bytes = recv(fd, buffer, sizeof(buffer), 0);
 
@@ -141,6 +142,7 @@ void SocketManager::run()
 					else
 					{
 						m_clientBuffers[fd].append(buffer, bytes);
+
 						if (m_clientBuffers[fd].find("\r\n\r\n") != std::string::npos)
 						{
 							Request req = parseRequest(m_clientBuffers[fd]);
@@ -152,23 +154,47 @@ void SocketManager::run()
 							for (std::map<std::string, std::string>::iterator it = req.headers.begin();
 								it != req.headers.end(); ++it)
 								std::cout << "[HEADER] " << it->first << ": " << it->second << "\n";
+
+							std::string basePath = "./www";
+							std::string filePath = req.path == "/" ? "/index.html" : req.path;
+							std::string fullPath = basePath + filePath;
+
+							std::string response;
+
+							if (fileExists(fullPath))
+							{
+								std::string body = readFile(fullPath);
+								std::ostringstream oss;
+								oss << "HTTP/1.1 200 OK\r\n";
+								oss << "Content-Length: " << body.size() << "\r\n";
+								oss << "Content-Type: text/html\r\n"; // TODO: detect MIME type
+								oss << "\r\n";
+								oss << body;
+								response = oss.str();
+							}
+							else
+							{
+								std::string body = "<h1>404 Not Found</h1>";
+								std::ostringstream oss;
+								oss << "HTTP/1.1 404 Not Found\r\n";
+								oss << "Content-Length: " << body.size() << "\r\n";
+								oss << "Content-Type: text/html\r\n";
+								oss << "\r\n";
+								oss << body;
+								response = oss.str();
+							}
+
+							send(fd, response.c_str(), response.size(), 0);
+
+							close(fd);
+							m_clientBuffers.erase(fd);
+							m_pollfds.erase(m_pollfds.begin() + i);
+							--i;
 						}
-
-						std::cout << "Received from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
-
-						std::string response =
-							"HTTP/1.1 200 OK\r\n"
-							"Content-Length: 13\r\n"
-							"Content-Type: text/plain\r\n"
-							"\r\n"
-							"Hello, world!";
-
-						send(fd, response.c_str(), response.size(), 0);
-
-						close(fd);
-						m_clientBuffers.erase(fd);
-						m_pollfds.erase(m_pollfds.begin() + i);
-						--i;
+						else
+						{
+							std::cout << "Received partial data from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
+						}
 					}
 				}
 			}
