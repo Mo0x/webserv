@@ -6,11 +6,13 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/16 19:38:51 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/20 19:55:41 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "SocketManager.hpp"
+#include "request_parser.hpp"
+#include "request_reponse_struct.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <stdexcept>  // std::runtime_error
@@ -139,6 +141,19 @@ void SocketManager::run()
 					else
 					{
 						m_clientBuffers[fd].append(buffer, bytes);
+						if (m_clientBuffers[fd].find("\r\n\r\n") != std::string::npos)
+						{
+							Request req = parseRequest(m_clientBuffers[fd]);
+
+							std::cout << "[PARSED] Method: " << req.method << "\n";
+							std::cout << "[PARSED] Path: " << req.path << "\n";
+							std::cout << "[PARSED] Version: " << req.http_version << "\n";
+
+							for (std::map<std::string, std::string>::iterator it = req.headers.begin();
+								it != req.headers.end(); ++it)
+								std::cout << "[HEADER] " << it->first << ": " << it->second << "\n";
+						}
+
 						std::cout << "Received from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
 
 						std::string response =
