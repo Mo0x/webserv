@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/20 20:23:21 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/22 18:45:25 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -156,9 +156,26 @@ void SocketManager::run()
 								std::cout << "[HEADER] " << it->first << ": " << it->second << "\n";
 
 							std::string basePath = "./www";
-							std::string filePath = req.path == "/" ? "/index.html" : req.path;
+							std::string filePath = req.path;
+							if (filePath == "/")
+								filePath = "/index.html";
 							std::string fullPath = basePath + filePath;
-
+							if (!isPathSafe(basePath, fullPath))
+							{
+								std::string body = "<h1>403 Forbidden</h1>";
+								std::ostringstream oss;
+								oss << "HTTP/1.1 403 Forbidden\r\n";
+								oss << "Content-Length: " << body.size() << "\r\n";
+								oss << "Content-Type: text/html\r\n\r\n";
+								oss << body;
+								std::string response = oss.str();
+								send(fd, response.c_str(), response.size(), 0);
+								close(fd);
+								m_clientBuffers.erase(fd);
+								m_pollfds.erase(m_pollfds.begin() + i);
+								--i;
+								continue;
+							}
 							std::string response;
 
 							if (fileExists(fullPath))
