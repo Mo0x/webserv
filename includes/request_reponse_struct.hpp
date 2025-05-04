@@ -1,6 +1,9 @@
 #ifndef REQUEST_REPONSE_STRUCT_HPP
 #define REQUEST_REPONSE_STRUCT_HPP
 
+#include <map>
+#include <string>
+
 struct Request {
     std::string method;
     std::string path;

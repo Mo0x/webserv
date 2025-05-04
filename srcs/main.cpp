@@ -1,139 +1,14 @@
-/*#include <iostream>
-#include <csignal>
-#include <unistd.h>
-#include "ConfigParser.hpp"
-#include "ServerSocket.hpp"
-
-volatile bool g_running = true;
-
-void handleSignal(int)
-{
-    g_running = false;
-}
-
-void testParsedConfig(const std::vector<ServerConfig>& servers)
-{
-    std::string requestMethod = "GET";
-    std::string requestUri = "/images/";
-
-    if (servers.empty())
-    {
-        std::cerr << "No server configuration found." << std::endl;
-        return;
-    }
-
-    ServerConfig server = servers[0];
-    const std::vector<LocationConfig>& locations = server.getLocations();
-    const LocationConfig* matchedLocation = NULL;
-    size_t longestMatch = 0;
-
-    for (size_t i = 0; i < locations.size(); ++i)
-    {
-        if (requestUri.find(locations[i].path) == 0)
-        {
-            size_t len = locations[i].path.length();
-            if (len > longestMatch)
-            {
-                longestMatch = len;
-                matchedLocation = &locations[i];
-            }
-        }
-    }
-
-    if (matchedLocation == NULL)
-    {
-        std::cout << "404 Not Found: No matching route for " << requestUri << std::endl;
-    }
-    else
-    {
-        bool methodAllowed = false;
-        for (size_t i = 0; i < matchedLocation->allowedMethods.size(); ++i)
-        {
-            if (matchedLocation->allowedMethods[i] == requestMethod)
-            {
-                methodAllowed = true;
-                break;
-            }
-        }
-
-        if (!methodAllowed)
-        {
-            std::cout << "405 Method Not Allowed: " << requestMethod
-                      << " is not allowed on " << matchedLocation->path << std::endl;
-        }
-        else if (!matchedLocation->redirect.empty())
-        {
-            std::cout << "Redirect (3xx): " << matchedLocation->redirect << std::endl;
-        }
-        else
-        {
-            if (requestUri.back() == '/')
-            {
-                if (!matchedLocation->index.empty())
-                {
-                    std::string filePath = matchedLocation->root + "/" + matchedLocation->index;
-                    std::cout << "Serving index file: " << filePath << std::endl;
-                }
-                else if (matchedLocation->autoindex)
-                {
-                    std::cout << "Serving autoindex for directory: " << matchedLocation->root << std::endl;
-                }
-                else
-                {
-                    std::cout << "403 Forbidden/404 Not Found: No index file and autoindex is disabled." << std::endl;
-                }
-            }
-            else
-            {
-                std::string filePath = matchedLocation->root + requestUri;
-                std::cout << "Serving static file: " << filePath << std::endl;
-            }
-        }
-    }
-}
-
-int main(int argc, char **argv)
-{
-    std::string cfg = "default.conf";
-    if (argc == 2)
-        cfg = argv[1];
-    else if (argc > 2)
-    {
-        std::cerr << "Usage: ./webserv [configuration file]" << std::endl;
-        return (1);
-    }
-
-    try
-    {
-        std::signal(SIGINT, handleSignal);
-
-        ConfigParser parser(cfg);
-        std::vector<ServerConfig> servers = parser.getServers();
-
-        // DEBUG block for testing config parsing + routing
-        std::cout << "Running config tests...\n";
-        testParsedConfig(servers);
-
-        ServerConfig config = servers[0];
-        ServerSocket server(config.getHost(), config.getPort());
-
-        std::cout << "Server listening on " << server.getHost() << ":" << server.getPort() << "\n";
-        std::cout << "Press Ctrl+C to stop.\n";
-
-        while (g_running)
-            pause();
-
-        std::cout << "Shutting down.\n";
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
-        return 1;
-    }
-
-    return 0;
-}
-*/
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   main.cpp                                           :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
+/*   Updated: 2025/04/16 19:05:12 by mgovinda         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
 
 #include <iostream>
 #include <csignal>
@@ -142,24 +17,25 @@ int main(int argc, char **argv)
 #include <map>
 #include <string>
 #include <cstdlib>
+
 #include "ConfigParser.hpp"
 #include "ServerSocket.hpp"
 #include "MultipartParser.hpp"
 #include "FileUploadHandler.hpp"
+#include "SocketManager.hpp"
 
-// Global flag used for graceful shutdown.
 volatile bool g_running = true;
 
-// Signal handler to set the global flag.
-void handleSignal(int) {
+void handleSignal(int)
+{
     g_running = false;
 }
 
-// Existing test for configuration parsing and route matching.
+// Test du parsing de config et du routing
 void testParsedConfig(const std::vector<ServerConfig>& servers)
 {
     std::string requestMethod = "GET";
-    std::string requestUri = "/images/";
+    std::string requestUri    = "/images/";
 
     if (servers.empty())
     {
@@ -167,130 +43,115 @@ void testParsedConfig(const std::vector<ServerConfig>& servers)
         return;
     }
 
-    ServerConfig server = servers[0];
-    const std::vector<LocationConfig>& locations = server.getLocations();
-    const LocationConfig* matchedLocation = NULL;
-    size_t longestMatch = 0;
+    const ServerConfig& server = servers[0];
+    const std::vector<LocationConfig>& locs = server.getLocations();
 
-    for (size_t i = 0; i < locations.size(); ++i)
+    const LocationConfig* best = NULL;
+    size_t longest = 0;
+    for (size_t i = 0; i < locs.size(); ++i)
     {
-        if (requestUri.find(locations[i].path) == 0)
+        if (requestUri.find(locs[i].path) == 0 && locs[i].path.size() > longest)
         {
-            size_t len = locations[i].path.length();
-            if (len > longestMatch)
-            {
-                longestMatch = len;
-                matchedLocation = &locations[i];
-            }
+            longest = locs[i].path.size();
+            best    = &locs[i];
         }
     }
 
-    if (matchedLocation == NULL)
+    if (!best)
     {
-        std::cout << "404 Not Found: No matching route for " << requestUri << std::endl;
+        std::cout << "404 Not Found: " << requestUri << std::endl;
+        return;
+    }
+
+    // Méthode autorisée ?
+    bool ok = false;
+    for (size_t i = 0; i < best->allowedMethods.size(); ++i)
+        if (best->allowedMethods[i] == requestMethod)
+            ok = true;
+
+    if (!ok)
+    {
+        std::cout << "405 Method Not Allowed on " << best->path << std::endl;
+    }
+    else if (!best->redirect.empty())
+    {
+        std::cout << "Redirect to " << best->redirect << std::endl;
     }
     else
     {
-        bool methodAllowed = false;
-        for (size_t i = 0; i < matchedLocation->allowedMethods.size(); ++i)
+        // C++98 : on n’utilise pas back()
+        if (!requestUri.empty() && requestUri[requestUri.size() - 1] == '/')
         {
-            if (matchedLocation->allowedMethods[i] == requestMethod)
-            {
-                methodAllowed = true;
-                break;
-            }
-        }
-        if (!methodAllowed)
-        {
-            std::cout << "405 Method Not Allowed: " << requestMethod
-                      << " is not allowed on " << matchedLocation->path << std::endl;
-        }
-        else if (!matchedLocation->redirect.empty())
-        {
-            std::cout << "Redirect (3xx): " << matchedLocation->redirect << std::endl;
+            if (!best->index.empty())
+                std::cout << "Index: " << best->root << "/" << best->index << std::endl;
+            else if (best->autoindex)
+                std::cout << "Autoindex on " << best->root << std::endl;
+            else
+                std::cout << "403/404: no index & autoindex off" << std::endl;
         }
         else
         {
-            if (!requestUri.empty() && requestUri[requestUri.size() - 1] == '/')
-            {
-                if (!matchedLocation->index.empty())
-                {
-                    std::string filePath = matchedLocation->root + "/" + matchedLocation->index;
-                    std::cout << "Serving index file: " << filePath << std::endl;
-                }
-                else if (matchedLocation->autoindex)
-                {
-                    std::cout << "Serving autoindex for directory: " << matchedLocation->root << std::endl;
-                }
-                else
-                {
-                    std::cout << "403 Forbidden/404 Not Found: No index file and autoindex is disabled." << std::endl;
-                }
-            }
-            else
-            {
-                std::string filePath = matchedLocation->root + requestUri;
-                std::cout << "Serving static file: " << filePath << std::endl;
-            }
+            std::cout << "Serving: " << best->root << requestUri << std::endl;
         }
     }
 }
 
-// New test for multipart/form-data parsing and file upload handling.
-void testMultipart() {
-    // Define a boundary for our test multipart content.
-    std::string boundary = "MyBoundary";
-    std::string contentType = "multipart/form-data; boundary=" + boundary;
-    
-    // Construct a sample multipart/form-data request body.
-    // The first part is a simple form field and the second part is a file upload.
-    std::string requestBody;
-    requestBody += "--" + boundary + "\r\n";
-    requestBody += "Content-Disposition: form-data; name=\"field1\"\r\n\r\n";
-    requestBody += "value1\r\n";
-    requestBody += "--" + boundary + "\r\n";
-    requestBody += "Content-Disposition: form-data; name=\"file1\"; filename=\"test.txt\"\r\n";
-    requestBody += "Content-Type: text/plain\r\n\r\n";
-    requestBody += "This is file content.\r\n";
-    requestBody += "--" + boundary + "--\r\n";
-
-    try {
-        // Parse the multipart/form-data content.
-        MultipartParser parser(requestBody, contentType);
-        std::vector<MultipartPart> parts = parser.parse();
-        std::cout << "\n[Multipart Test] Number of parts: " << parts.size() << std::endl;
-
-        // Iterate over each parsed part and display its details.
-        for (size_t i = 0; i < parts.size(); ++i) {
-            std::cout << "\n[Multipart Test] Part " << i + 1 << " details:\n";
-            for (std::map<std::string, std::string>::iterator it = parts[i].headers.begin(); it != parts[i].headers.end(); ++it) {
-                std::cout << "\tHeader: " << it->first << " : " << it->second << "\n";
-            }
-            std::cout << "\tContent: " << parts[i].content << "\n";
-            std::cout << "\tIs file: " << (parts[i].isFile ? "Yes" : "No") << "\n";
-            if (parts[i].isFile) {
-                std::cout << "\tFilename: " << parts[i].filename << "\n";
-                // Test saving the uploaded file; using "/tmp" as the upload directory and setting a max file size.
-                std::string savedFile = FileUploadHandler::saveUploadedFile(parts[i], "/tmp", 10000);
-                std::cout << "\tFile saved at: " << savedFile << "\n";
-            }
-        }
-    }
-    catch (const std::exception &e) {
-        std::cerr << "\n[Multipart Test] Error: " << e.what() << std::endl;
-    }
-}
-
-int main(int argc, char **argv)
+// Test unitaire multipart/form-data + upload
+void testMultipart()
 {
-    std::string cfg = "default.conf";
+    std::string boundary    = "MyBoundary";
+    std::string contentType = "multipart/form-data; boundary=" + boundary;
+
+    std::string body;
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"field1\"\r\n\r\n";
+    body += "value1\r\n";
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"file1\"; filename=\"test.txt\"\r\n";
+    body += "Content-Type: text/plain\r\n\r\n";
+    body += "Dummy file content.\r\n";
+    body += "--" + boundary + "--\r\n";
+
+    try
+    {
+        MultipartParser parser(body, contentType);
+        std::vector<MultipartPart> parts = parser.parse();
+
+        std::cout << "[Multipart] parts = " << parts.size() << std::endl;
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            std::cout << "Part " << i
+                      << " isFile=" << (parts[i].isFile ? "yes" : "no")
+                      << ", filename=" << parts[i].filename
+                      << ", content='" << parts[i].content << "'" << std::endl;
+
+            if (parts[i].isFile)
+            {
+                std::string saved = FileUploadHandler::saveUploadedFile(
+                    parts[i], "/tmp/uploads", 1048576);
+                std::cout << " → saved to: " << saved << std::endl;
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[Multipart] Error: " << e.what() << std::endl;
+    }
+}
+
+int main(int argc, char** argv)
+{
+    std::string cfg = "config.conf";
     if (argc == 2)
         cfg = argv[1];
     else if (argc > 2)
     {
-        std::cerr << "Usage: ./webserv [configuration file]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [configuration file]" << std::endl;
         return 1;
     }
+
+    // Création du dossier d’upload si besoin
+    system("mkdir -p /tmp/uploads && chmod 755 /tmp/uploads");
 
     try
     {
@@ -299,28 +160,22 @@ int main(int argc, char **argv)
         ConfigParser parser(cfg);
         std::vector<ServerConfig> servers = parser.getServers();
 
-        std::cout << "Running config tests...\n";
+        std::cout << "=== Config Tests ===\n";
         testParsedConfig(servers);
 
-        // Run the multipart and file upload handling tests.
-        std::cout << "\nRunning multipart/form-data parsing and file upload tests...\n";
+        std::cout << "\n=== Multipart Tests ===\n";
         testMultipart();
 
-        ServerConfig config = servers[0];
-        ServerSocket server(config.getHost(), config.getPort());
-
-        std::cout << "\nServer listening on " << server.getHost() << ":" << server.getPort() << "\n";
-        std::cout << "Press Ctrl+C to stop.\n";
-
-        while (g_running)
-            pause();
-
-        std::cout << "Shutting down.\n";
+        std::cout << "\n=== Starting server ===\n";
+        SocketManager sm;
+        // ajoutez ici autant de serveurs que vous voulez à partir de la config
+        sm.addServer(servers[0].getHost(), servers[0].getPort());
+        sm.run();
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
-        return 1;
+        std::cerr << "Fatal: " << e.what() << std::endl;
+        return 2;
     }
 
     return 0;

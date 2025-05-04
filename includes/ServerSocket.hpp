@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:35:57 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/13 18:10:48 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/16 19:19:41 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -22,16 +22,16 @@ class ServerSocket
 	unsigned short	m_port;
 	std::string		m_host;
 
-	ServerSocket &operator=(const ServerSocket &src);
-
+	
 	void setNonBlocking();
 	void bindSocket();
 	void listenSocket();
-
+	ServerSocket &operator=(const ServerSocket &src);
+	ServerSocket(const ServerSocket &src);
+	
 	public:
 	ServerSocket();
 	ServerSocket(const std::string &host, unsigned short port);
-	ServerSocket(const ServerSocket &src);
 	~ServerSocket();
 
 	//get
