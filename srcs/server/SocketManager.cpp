@@ -160,11 +160,9 @@ void SocketManager::run()
 							std::string fullPath = basePath + filePath;
 
 							std::string response;
-
-							if (fileExists(fullPath))
+							if (file_utils::exists(fullPath))
 							{
-								std::string body = readFile(fullPath);
-								std::ostringstream oss;
+								std::string body = file_utils::readFile(fullPath);								std::ostringstream oss;
 								oss << "HTTP/1.1 200 OK\r\n";
 								oss << "Content-Length: " << body.size() << "\r\n";
 								oss << "Content-Type: text/html\r\n"; // TODO: detect MIME type

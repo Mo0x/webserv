@@ -94,7 +94,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
                 current++;
             }
         }
-        else if (tokens[current].value == "port")
+        else if (tokens[current].value == "port" || tokens[current].value == "listen")
         {
             current++;
             if (current < tokens.size())
@@ -183,28 +183,26 @@ LocationConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens
     {
         if (tokens[current].value == "root")
         {
-            current++;
+            ++current;
             if (current < tokens.size())
             {
                 loc.root = tokens[current].value;
-                current++;
+                ++current;
             }
-            if (tokens[current].value == ";")
+            if (current < tokens.size() && tokens[current].value == ";")
             {
-                current++;
+                ++current;
             }
-        }
-        else if (tokens[current].value == "index")
-        {
-            current++;
-            if (current < tokens.size())
+            else if (tokens[current].value == "index")
             {
-                loc.index = tokens[current].value;
-                current++;
-            }
-            if (tokens[current].value == ";")
-            {
-                current++;
+                ++current;
+                if (current < tokens.size())
+                {
+                    loc.index = tokens[current].value;
+                    ++current;
+                }
+                if (current < tokens.size() && tokens[current].value == ";")
+                    ++current;
             }
         }
         else if (tokens[current].value == "allowedMethods")
@@ -293,6 +291,18 @@ LocationConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens
                 current++;
             }
         }
+    /*    else if (tokens[current].value == "error_page")
+        {
+            current++;
+            if (current + 1 < tokens.size())
+            {
+                int code = atoi(tokens[current++].value.c_str());
+                std::string path = tokens[current++].value;
+                server.addErrorPage(code, path);
+            }
+            if (tokens[current].value == ";") current++;
+        }
+            */
         else
         {
             // If an unrecognized directive is found, skip it.

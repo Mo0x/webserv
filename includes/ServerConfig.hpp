@@ -53,6 +53,7 @@ class ServerConfig
 	void addErrorPage(int code, const std::string& path);
 	void setClientMaxBodySize(size_t size);
 	void addLocation(const LocationConfig& loc);
+	const LocationConfig* findBestLocation(const std::string& requestPath) const;
 };
 
 #endif
