@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/16 19:21:42 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/22 19:33:59 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -103,13 +103,10 @@ void ServerSocket::setup()
 
 void ServerSocket::setNonBlocking()
 {
-	int flags = fcntl(m_fd, F_GETFL, 0);
-	if (flags < 0)
-		throw std::runtime_error("fcntl(F_GETFL) failed: " + std::string(strerror(errno)));
-
-	if (fcntl(m_fd, F_SETFL, flags | O_NONBLOCK) < 0)
+	if (fcntl(m_fd, F_SETFL, O_NONBLOCK) < 0)
 		throw std::runtime_error("fcntl(F_SETFL) failed: " + std::string(strerror(errno)));
 }
+
 
 void ServerSocket::bindSocket()
 {

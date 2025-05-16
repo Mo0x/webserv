@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/22 18:45:25 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/04/22 19:36:23 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,7 +37,7 @@ SocketManager::SocketManager(const SocketManager &src)
     // Do NOT copy m_servers — ServerSocket is non-copyable
 }
 
-SocketManager& SocketManager::operator=(const SocketManager &src)
+SocketManager &SocketManager::operator=(const SocketManager &src)
 {
     if (this != &src)
     {
@@ -108,16 +108,20 @@ void SocketManager::run()
 					if (client_fd >= 0)
 					{
 						std::cout << "Accepted new client: fd " << client_fd << std::endl;
-
-						int flags = fcntl(client_fd, F_GETFL, 0);
-						fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
-
+					
+						if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
+						{
+							perror("fcntl(F_SETFL) failed");
+							close(client_fd);
+							continue;
+						}
+					
 						struct pollfd client_poll;
 						client_poll.fd = client_fd;
 						client_poll.events = POLLIN;
 						client_poll.revents = 0;
 						m_pollfds.push_back(client_poll);
-
+					
 						m_clientBuffers[client_fd] = "";
 						std::cout << "[DEBUG] Client fd " << client_fd << " added to poll()" << std::endl;
 					}
