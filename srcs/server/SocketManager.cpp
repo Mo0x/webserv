@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/22 19:36:23 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/24 21:13:08 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -76,6 +76,35 @@ void SocketManager::initPoll()
 }
 
 void SocketManager::run()
+{
+	while (true)
+	{
+		int activity = poll(m_pollfds.data(), m_pollfds.size(), -1);
+		if (activity < 0 )
+		{
+			std::cerr << "Poll error" << std::endl;
+			continue ;
+		}
+		for (size_t i = 0; i < m_pollfds.size(); ++i)
+		{
+			int fd = m_pollfds[i].fd;
+			short revents = m_pollfds[i].revents;
+			if (revents & POLLIN)
+			{
+				if (isListeningSocket(fd))
+					handleNewConnection(fd);
+				else
+					handleClientRead(fd);
+			}
+			else if (revents & POLLOUT)
+				handleClientWrite(fd);
+			else if (revents & (POLLERR | POLLHUP | POLLNVAL))
+				handleClientDisconnect(fd);
+		}
+	}
+}
+
+/* void SocketManager::run()
 {
 	initPoll();
 	std::cout << "Starting poll() loop on " << m_pollfds.size() << " sockets." << std::endl;
@@ -222,3 +251,4 @@ void SocketManager::run()
 		}
 	}
 }
+ */
