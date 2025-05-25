@@ -6,6 +6,6 @@
 bool fileExists(const std::string& path);
 std::string readFile(const std::string& path);
 bool isPathSafe(const std::string& base, const std::string& target);
-
+bool isPathTraversalSafe(const std::string &path);
 
 #endif
