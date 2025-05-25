@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 20:16:38 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/25 20:48:46 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -118,7 +118,7 @@ void SocketManager::handleNewConnection(int listen_fd)
 		perror("accept() failed");
 		return ;
 	}
-	std::cout << "Accepeted new client: fd " << client_fd << std::endl;
+	std::cout << "Accepted new client: fd " << client_fd << std::endl;
 	if(fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
 	{
 		perror("fcntl(F_SETFL) failed");
@@ -155,9 +155,9 @@ void SocketManager::handleClientRead(int fd)
 
 	std::string response;
 	if (!isPathSafe(basePath, fullPath))
-		response = buildErrorReponse(403);
+		response = buildErrorResponse(403);
 	else if (!fileExists(fullPath))
-		response = buildErrorReponse(404);
+		response = buildErrorResponse(404);
 	else
 	{
 		std::string body = readFile(fullPath);
@@ -168,8 +168,37 @@ void SocketManager::handleClientRead(int fd)
 			<< body;
 		response = oss.str();
 	}
-	send(fd, response.c_str(), response.size(), 0);
-	handleClientDisconnect(fd);
+	m_clientWriteBuffers[fd] = response;
+
+	for (size_t i = 0; i < m_pollfds.size(); ++i)
+	{
+		if (m_pollfds[i].fd == fd)
+		{
+			m_pollfds[i].events = POLLOUT;
+			break ;
+		}
+	}
+}
+
+void SocketManager::handleClientWrite(int fd)
+{
+	if (m_clientWriteBuffers.find(fd) == m_clientWriteBuffers.end())
+		return ;
+	std::string &buffer = m_clientWriteBuffers[fd];
+	ssize_t sent = send (fd, buffer.c_str(), buffer.size(), 0);
+	if (sent < 0)
+	{
+		perror("send() failed");
+		handleClientDisconnect(fd);
+		return ;
+	}
+
+	buffer.erase(0,sent);
+	if (buffer.empty())
+	{
+		m_clientWriteBuffers.erase(fd);
+		handleClientDisconnect(fd);
+	}
 }
 
 void SocketManager::handleClientDisconnect(int fd)
