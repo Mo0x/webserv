@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 20:48:46 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/25 22:13:37 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,7 @@
 #include "request_parser.hpp"
 #include "request_reponse_struct.hpp"
 #include "file_utils.hpp"
+#include "utils.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <stdexcept>  // std::runtime_error
@@ -144,38 +145,45 @@ void SocketManager::handleClientRead(int fd)
 		return ;
 	}
 	m_clientBuffers[fd].append(buffer, bytes);
+
+	// Wait for full HTTP request (simplified, assumes no body)
 	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
 		return ;
-	Request req = parseRequest(m_clientBuffers[fd]);
 
-	// HARDCODED for now needs to be dynamic later
+	Request req = parseRequest(m_clientBuffers[fd]);
 	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
-	std::string basePath = "./www"; 
-	std::string fullPath =  basePath + filePath;
+	std::string basePath = "./www";
+	std::string fullPath = basePath + filePath;
 
 	std::string response;
-	if (!isPathSafe(basePath, fullPath))
+
+	if (!isPathSafe(basePath, fullPath)) {
 		response = buildErrorResponse(403);
-	else if (!fileExists(fullPath))
-		response = buildErrorResponse(404);
-	else
-	{
-		std::string body = readFile(fullPath);
-		std::ostringstream oss;
-		oss << "HTTP/1.1 200 OK\r\n"
-			<< "Content-Length: " << body.size() << "\r\n"
-			<< "Content-Type: text/html\r\n\r\n"
-			<< body;
-		response = oss.str();
 	}
+	else if (!fileExists(fullPath)) {
+		response = buildErrorResponse(404);
+	}
+	else {
+		std::string body = readFile(fullPath);
+		Response res;
+		res.status_code = 200;
+		res.status_message = "OK";
+		res.body = body;
+		res.headers["Content-Type"] = "text/html";
+		res.headers["Content-Length"] = to_string(body.length());
+		res.close_connection = true;
+		response = build_http_response(res);
+	}
+
 	m_clientWriteBuffers[fd] = response;
 
+	// Update pollfd to POLLOUT so we can send the response
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
 		if (m_pollfds[i].fd == fd)
 		{
 			m_pollfds[i].events = POLLOUT;
-			break ;
+			break;
 		}
 	}
 }
@@ -185,7 +193,7 @@ void SocketManager::handleClientWrite(int fd)
 	if (m_clientWriteBuffers.find(fd) == m_clientWriteBuffers.end())
 		return ;
 	std::string &buffer = m_clientWriteBuffers[fd];
-	ssize_t sent = send (fd, buffer.c_str(), buffer.size(), 0);
+	ssize_t sent = send(fd, buffer.c_str(), buffer.size(), 0);
 	if (sent < 0)
 	{
 		perror("send() failed");
@@ -218,27 +226,24 @@ void SocketManager::handleClientDisconnect(int fd)
 
 std::string SocketManager::buildErrorResponse(int code)
 {
-	std::string body;
-	std::string status;
+	Response res;
+	res.status_code = code;
+	res.close_connection = true;
+	res.headers["Content-Type"] = "text/html";
 
-	if (code == 403)
-	{
-		body = "<h1> 403 Forbidden</h1>";
-		status = "403 Forbidden";
+	if (code == 403) {
+		res.status_message = "Forbidden";
+		res.body = "<h1>403 Forbidden</h1>";
+	} else {
+		res.status_code = 404;  // fallback
+		res.status_message = "Not Found";
+		res.body = "<h1>404 Not Found</h1>";
 	}
-	else
-	{
-		body = "<h1> 404 Not Found</h1>";
-		status = "404 Not Found";
-	}
-	std::ostringstream oss;
-	oss << "HTTPL/1.1 " << status << "\r\n"
-		<< "Content-Lenght: " << body.size() << "\r\n"
-		<< "Content-Type: text/html\r\n\r\n"
-		<< body;
 
-	return oss.str();
+	res.headers["Content-Length"] = to_string(res.body.length());
+	return build_http_response(res);
 }
+
 
 
 /* void SocketManager::run()
