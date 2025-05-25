@@ -1,14 +1,17 @@
 NAME = ./webserv
 CXX = c++
 SRCS =	./srcs/main.cpp \
-		./srcs/server/Server.cpp \
-		./srcs/cfg/Config.cpp \
-		./srcs/utils/Logger.cpp
+		./srcs/cfg/ConfigLexer.cpp \
+		./srcs/cfg/ConfigParser.cpp \
+		./srcs/cfg/ServerConfig.cpp \
+		./srcs/server/ServerSocket.cpp \
+		./srcs/server/SocketManager.cpp \
+		./srcs/utils/request_parser.cpp \
+		./srcs/utils/file_utils.cpp
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 INCDIRS = ./includes
-CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 -I$(INCDIRS) -pedantic
-LDFLAGS = -no-pie
+CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 -I$(INCDIRS)
 
 all : $(NAME)
 

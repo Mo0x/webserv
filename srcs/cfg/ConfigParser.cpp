@@ -1,137 +1,178 @@
 #include "ConfigParser.hpp"
+#include "ConfigLexer.hpp"
 #include <iostream>
 #include <cstdlib>
+#include <stdexcept>
+#include <string>
+#include <sstream>
 
-ConfigParser::ConfigParser()
+ConfigParser::ConfigParser() : m_filePath("")
 {
-	parse();
+    parse();
+}
+
+ConfigParser::ConfigParser(const std::string &path) : m_filePath(path)
+{
+    parse();
 }
 
 ConfigParser::ConfigParser(const ConfigParser &src)
 {
-	*this = src;
+    *this = src;
 }
 
 ConfigParser &ConfigParser::operator=(const ConfigParser &src)
-[
-	if (this != &src)
-	{
-		this->m_filePath = src.m_filePath;
-		this->m_servers = src.m_servers;
-	}
-	return (*this);
-]
-
-ConfigParser::~ConfigParser ()
 {
-	return ;
+    if (this != &src)
+    {
+        this->m_filePath = src.m_filePath;
+        this->m_servers = src.m_servers;
+    }
+    return (*this);
 }
 
-ConfigParser::ConfigParser(const std::string &path) :
-	m_filePath(path)
+ConfigParser::~ConfigParser()
 {
-	parse();
+    // Destructeur (aucune libération spécifique n'est nécessaire ici)
 }
 
 const std::vector<ServerConfig> &ConfigParser::getServers() const
 {
-	return (m_servers);
+    return (m_servers);
 }
 
 void ConfigParser::parse()
 {
-	std::ifstream file(_filePath.c_str());
-	if (!file.is_open())
-		throw std::runtime_error("Unable to open config file: " + _filePath);
-
-	std::string line;
-	while (std::getline(file, line))
-	{
-		line = trim(line);
-		if (line.empty() || line[0] == '#')
-			continue;
-
-		if (line == "server")
-		{
-			std::getline(file, line);
-			line = trim(line);
-			if (line == "{")
-				parseServer(file);
-			else
-				throw std::runtime_error("Expected '{' after 'server'");
-		}
-		else if (line == "server {")
-		{
-			parseServer(file);
-		}
-		else
-		{
-			throw std::runtime_error("Unexpected line in config: " + line);
-		}
-	}
+    ConfigLexer lexer(m_filePath);
+    std::vector<Token> tokens = lexer.tokenize();
+    size_t current = 0;
+    
+    while (current < tokens.size() && tokens[current].type != TOKEN_END_OF_FILE)
+    {
+        if (tokens[current].value == "server")
+        {
+            current++;  // Consomme le mot-clé 'server'
+            if (current >= tokens.size() || tokens[current].value != "{")
+            {
+                std::ostringstream oss;
+                oss << "Attendu '{' après 'server' à la ligne " << tokens[current].line;
+                throw std::runtime_error(oss.str());
+            }
+            current++;  // Consomme '{'
+            ServerConfig server = parseServerBlock(tokens, current);
+            m_servers.push_back(server);
+        }
+        else
+        {
+            std::ostringstream oss;
+            oss << "Jeton inattendu : " << tokens[current].value << " à la ligne " << tokens[current].line;
+            throw std::runtime_error(oss.str());
+        }
+    }
 }
 
-void ConfigParser::parseServer(std::istream &stream)
+ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, size_t &current)
 {
-	ServerConfig	server;
-	std::string		line;
-
-	while (std::getline(stream, line))
-	{
-		line = trim(line);
-		if (line.empty() || line[0] == '#')
-			continue;
-		if (line == '}')
-		{
-			m_servers.push_back(server);
-			return ;
-		}
-		std::vector<std::string> tokens = split(line);
-		if (tokens.empty())
-			continue;
-
-		if (tokens[0] == "listen" && tokens.size() >= 2)
-		{
-			size_t colon = tokens[1].find(':');
-			if (colon != std::string::npos)
-			{
-				server.setHost(tokens[1].substr(0, colon));
-				server.setPort(std::atoi(tokens[1].c_str() + colon + 1));
-			}
-			else
-				server.setPort(std::atoi(tokens[1].c_str()));
-		}
-		else if (token[0] == "server_name" && tokens.size() == 2)
-			server.setServerName(tokens[1]);
-		else if (tokens[0] == "error_page" && tokens.size() == 3)
-		{
-			int code = std::atoi(tokens[1].c_str());
-			server.addErrorPage(code, token[2]);
-		}
-		else if (tokens[0] == "client_max_body_size" && tokens.size() == 2)
-			server.setClientMaxBodySize(std::atoi(tokens[1].c_str()));
-		else
-			std::cerr << "Warning: Unknow or malformed directive: " << line << std::endl;
-	}
-	throw std::runtime_error("Missing closing '}' in server block");
-}
-
-//Utils
-
-std::string ConfigParser::trim(const std::string& s)
-{
-	size_t start = s.find_first_not_of(" \t\r\n");
-	size_t end = s.find_last_not_of(" \t\r\n");
-	return (start == std::string::npos || end == std::string::npos) ? "" : s.substr(start, end - start + 1);
-}
-
-
-std::vector<std::string> ConfigParser::split(const std::string& line)
-{
-	std::istringstream iss(line);
-	std::vector<std::string> tokens;
-	std::string token;
-	while (iss >> token)
-		tokens.push_back(token);
-	return tokens;
+    ServerConfig server;
+    
+    while (current < tokens.size() && tokens[current].value != "}")
+    {
+        std::string directive = tokens[current].value;
+        current++;  // Consomme le jeton de directive
+        
+        if (directive == "listen")
+        {
+            if (current >= tokens.size())
+            {
+                throw std::runtime_error("Fin inattendue des jetons dans la directive 'listen'");
+            }
+            std::string listenValue = tokens[current].value;
+            current++;
+            size_t colon = listenValue.find(':');
+            if (colon != std::string::npos)
+            {
+                server.setHost(listenValue.substr(0, colon));
+                server.setPort(std::atoi(listenValue.c_str() + colon + 1));
+            }
+            else
+            {
+                server.setPort(std::atoi(listenValue.c_str()));
+            }
+            if (current >= tokens.size() || tokens[current].value != ";")
+            {
+                std::ostringstream oss;
+                oss << "Attendu ';' après la directive 'listen' à la ligne " << tokens[current].line;
+                throw std::runtime_error(oss.str());
+            }
+            current++;  // Consomme ';'
+        }
+        else if (directive == "server_name")
+        {
+            if (current >= tokens.size())
+            {
+                throw std::runtime_error("Fin inattendue des jetons dans la directive 'server_name'");
+            }
+            server.setServerName(tokens[current].value);
+            current++;
+            if (current >= tokens.size() || tokens[current].value != ";")
+            {
+                throw std::runtime_error("Attendu ';' après la directive 'server_name'");
+            }
+            current++;  // Consomme ';'
+        }
+        else if (directive == "error_page")
+        {
+            if (current + 1 >= tokens.size())
+            {
+                throw std::runtime_error("Fin inattendue des jetons dans la directive 'error_page'");
+            }
+            int code = std::atoi(tokens[current].value.c_str());
+            current++;
+            std::string path = tokens[current].value;
+            current++;
+            if (current >= tokens.size() || tokens[current].value != ";")
+            {
+                std::ostringstream oss;
+                oss << "Attendu ';' après la directive 'error_page' à la ligne " << tokens[current - 1].line;
+                throw std::runtime_error(oss.str());
+            }
+            server.addErrorPage(code, path);
+            current++;  // consume ';'
+        }
+        else if (directive == "client_max_body_size")
+        {
+            if (current >= tokens.size())
+            {
+                throw std::runtime_error("Fin inattendue des jetons dans la directive 'client_max_body_size'");
+            }
+            server.setClientMaxBodySize(std::atoi(tokens[current].value.c_str()));
+            current++;
+            if (current >= tokens.size() || tokens[current].value != ";")
+            {
+                throw std::runtime_error("Attendu ';' après la directive 'client_max_body_size'");
+            }
+            current++;  // Consomme ';'
+        }
+        else
+        {
+            std::cerr << "Attention : directive inconnue ou mal formée : " << directive
+                      << " à la ligne " << tokens[current].line << std::endl;
+            // Ignorer les jetons jusqu'au prochain ';'
+            while (current < tokens.size() && tokens[current].value != ";")
+            {
+                current++;
+            }
+            if (current < tokens.size())
+            {
+                current++;  // Consomme ';'
+            }
+        }
+    }
+    
+    if (current >= tokens.size() || tokens[current].value != "}")
+    {
+        throw std::runtime_error("Manque '}' de fermeture dans le bloc server");
+    }
+    current++;  // Consomme '}'
+    return (server);
 }

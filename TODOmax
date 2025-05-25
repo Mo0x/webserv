@@ -1,0 +1,8 @@
+✅ Your pending tasks as Dev A:
+Feature	Status	What you need to do next
+config.conf parsed	✅ Done	Already implemented and parsed into your config objects.
+ServerConfig populated	✅ Done	You have server configuration objects filled properly.
+Call addServer() when parsing config	⚠️ Unclear	Double-check if your parsed ServerConfig objects are effectively registered into your internal runtime server list. Implement if missing.
+Map socket FD to ServerConfig at runtime	❌ Not done	When you bind and listen on a socket, you must create a map between that socket's FD and the corresponding ServerConfig. This allows routing incoming connections to the right config block.
+Use ServerConfig for runtime behaviors (root, index, error_page)	❌ Not done	Ensure that your HTTP handlers use the config from the matching ServerConfig to locate the root, serve the correct index file, and show the configured error page.
+test
