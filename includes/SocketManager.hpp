@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 19:40:52 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/25 20:12:35 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,6 +43,7 @@ class SocketManager
 	void handleNewConnection(int listen_fd);
 	void handleClientRead(int fd);
 	void handleClientDisconnect(int fd);
+	std::string buildErrorResponse(int code);
 };
 
 #endif

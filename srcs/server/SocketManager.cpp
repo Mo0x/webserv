@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 19:42:54 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/25 20:16:38 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -126,7 +126,7 @@ void SocketManager::handleNewConnection(int listen_fd)
 		return ;
 	} 
 	struct pollfd pdf;
-	pdf.fg = client_fd;
+	pdf.fd = client_fd;
 	pdf.events = POLLIN;
 	pdf.revents = 0;
 	m_pollfds.push_back(pdf);
@@ -146,6 +146,30 @@ void SocketManager::handleClientRead(int fd)
 	m_clientBuffers[fd].append(buffer, bytes);
 	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
 		return ;
+	Request req = parseRequest(m_clientBuffers[fd]);
+
+	// HARDCODED for now needs to be dynamic later
+	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
+	std::string basePath = "./www"; 
+	std::string fullPath =  basePath + filePath;
+
+	std::string response;
+	if (!isPathSafe(basePath, fullPath))
+		response = buildErrorReponse(403);
+	else if (!fileExists(fullPath))
+		response = buildErrorReponse(404);
+	else
+	{
+		std::string body = readFile(fullPath);
+		std::ostringstream oss;
+		oss << "HTTP/1.1 200 OK\r\n"
+			<< "Content-Length: " << body.size() << "\r\n"
+			<< "Content-Type: text/html\r\n\r\n"
+			<< body;
+		response = oss.str();
+	}
+	send(fd, response.c_str(), response.size(), 0);
+	handleClientDisconnect(fd);
 }
 
 void SocketManager::handleClientDisconnect(int fd)
@@ -161,6 +185,30 @@ void SocketManager::handleClientDisconnect(int fd)
 			break ; 
 		}
 	}
+}
+
+std::string SocketManager::buildErrorResponse(int code)
+{
+	std::string body;
+	std::string status;
+
+	if (code == 403)
+	{
+		body = "<h1> 403 Forbidden</h1>";
+		status = "403 Forbidden";
+	}
+	else
+	{
+		body = "<h1> 404 Not Found</h1>";
+		status = "404 Not Found";
+	}
+	std::ostringstream oss;
+	oss << "HTTPL/1.1 " << status << "\r\n"
+		<< "Content-Lenght: " << body.size() << "\r\n"
+		<< "Content-Type: text/html\r\n\r\n"
+		<< body;
+
+	return oss.str();
 }
 
 
