@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/24 21:13:08 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/25 19:42:54 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -77,6 +77,7 @@ void SocketManager::initPoll()
 
 void SocketManager::run()
 {
+	initPoll();
 	while (true)
 	{
 		int activity = poll(m_pollfds.data(), m_pollfds.size(), -1);
@@ -103,6 +104,65 @@ void SocketManager::run()
 		}
 	}
 }
+
+bool SocketManager::isListeningSocket(int fd) const
+{
+	return m_serverFds.count(fd) > 0;
+}
+
+void SocketManager::handleNewConnection(int listen_fd)
+{
+	int client_fd = accept(listen_fd, NULL, NULL);
+	if (client_fd < 0)
+	{
+		perror("accept() failed");
+		return ;
+	}
+	std::cout << "Accepeted new client: fd " << client_fd << std::endl;
+	if(fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
+	{
+		perror("fcntl(F_SETFL) failed");
+		close (client_fd);
+		return ;
+	} 
+	struct pollfd pdf;
+	pdf.fg = client_fd;
+	pdf.events = POLLIN;
+	pdf.revents = 0;
+	m_pollfds.push_back(pdf);
+
+	m_clientBuffers[client_fd] = "";
+}
+
+void SocketManager::handleClientRead(int fd)
+{
+	char buffer[1024];
+	int bytes = recv(fd, buffer, sizeof(buffer), 0);
+	if (bytes <= 0)
+	{
+		handleClientDisconnect(fd);
+		return ;
+	}
+	m_clientBuffers[fd].append(buffer, bytes);
+	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
+		return ;
+}
+
+void SocketManager::handleClientDisconnect(int fd)
+{
+	std::cout << "Disconnecting fd " << fd << std::endl;
+	close(fd);
+	m_clientBuffers.erase(fd);
+	for (size_t i = 0; i < m_pollfds.size(); ++i)
+	{
+		if (m_pollfds[i].fd == fd)
+		{
+			m_pollfds.erase(m_pollfds.begin() + i);
+			break ; 
+		}
+	}
+}
+
 
 /* void SocketManager::run()
 {

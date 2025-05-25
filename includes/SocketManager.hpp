@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/24 20:17:55 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/05/25 19:40:52 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,6 +37,12 @@ class SocketManager
 	void addServer(const std::string& host, unsigned short port);
 	void initPoll();
 	void run(); // infinite poll loop
+
+	// member func inside run()
+	bool isListeningSocket(int fd) const;
+	void handleNewConnection(int listen_fd);
+	void handleClientRead(int fd);
+	void handleClientDisconnect(int fd);
 };
 
 #endif
