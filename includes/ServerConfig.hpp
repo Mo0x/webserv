@@ -1,6 +1,9 @@
 #ifndef SERVERCONFIG_HPP
 #define SERVERCONFIG_HPP
 
+/*ALMOST THE SAME AS CONFIG.HPP NEED TO DELETE ONE*/
+
+
 #include <string>
 #include <map>
 #include <vector>
