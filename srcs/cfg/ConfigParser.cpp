@@ -183,7 +183,10 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
     return (server);
 }
 
-RouteConfig ConfigParser::parseLocationBlock(const std::vector <Token> tokens, size_t &current);
+RouteConfig ConfigParser::parseLocationBlock(const std::vector <Token> tokens, size_t &current)
 {
     /*TODO*/;
+    RouteConfig ret;
+
+    return ret;
 }
