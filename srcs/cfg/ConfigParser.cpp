@@ -1,10 +1,16 @@
 #include "ConfigParser.hpp"
 #include "ConfigLexer.hpp"
+#include "Config.hpp"
 #include <iostream>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <sstream>
+
+/*TODO change from the Serverconfig class (.hpp) to the struct from Config.hpp
+    JAI FAIS UN CHANGEMENT POUR errorpage 404 qui etait std::stirng et mtn cest un std::map<int, std::string> error_pages
+    si ya des bug la dessus cest surement que jai pas gerer le refactoring
+*/
 
 ConfigParser::ConfigParser() : m_filePath("")
 {
@@ -91,12 +97,12 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             size_t colon = listenValue.find(':');
             if (colon != std::string::npos)
             {
-                server.setHost(listenValue.substr(0, colon));
-                server.setPort(std::atoi(listenValue.c_str() + colon + 1));
+                server.host = listenValue.substr(0, colon);
+                server.port = std::atoi(listenValue.c_str() + colon + 1);
             }
             else
             {
-                server.setPort(std::atoi(listenValue.c_str()));
+                server.port = std::atoi(listenValue.c_str());
             }
             if (current >= tokens.size() || tokens[current].value != ";")
             {
@@ -112,7 +118,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             {
                 throw std::runtime_error("Fin inattendue des jetons dans la directive 'server_name'");
             }
-            server.setServerName(tokens[current].value);
+            server.server_name = tokens[current].value;
             current++;
             if (current >= tokens.size() || tokens[current].value != ";")
             {
@@ -136,7 +142,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
                 oss << "Attendu ';' après la directive 'error_page' à la ligne " << tokens[current - 1].line;
                 throw std::runtime_error(oss.str());
             }
-            server.addErrorPage(code, path);
+            server.error_pages[code] = path;
             current++;  // consume ';'
         }
         else if (directive == "client_max_body_size")
@@ -145,7 +151,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             {
                 throw std::runtime_error("Fin inattendue des jetons dans la directive 'client_max_body_size'");
             }
-            server.setClientMaxBodySize(std::atoi(tokens[current].value.c_str()));
+            server.client_max_body_size = std::atoi(tokens[current].value.c_str());
             current++;
             if (current >= tokens.size() || tokens[current].value != ";")
             {

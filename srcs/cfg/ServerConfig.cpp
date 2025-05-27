@@ -1,4 +1,6 @@
-#include "ServerConfig.hpp"
+#include "to_delete_ServerConfig.hpp"
+
+/*to delete this file, keeping it for now in case we need to copy code from it*/
 
 ServerConfig::ServerConfig()
 	: m_host("0.0.0.0"), m_port(80), m_servername(""), m_error_pages(), m_locations(), m_clientMaxBodySize(1000000)
