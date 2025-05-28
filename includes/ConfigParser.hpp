@@ -35,4 +35,8 @@ class ConfigParser
 	const std::vector<ServerConfig> &getServers() const;
 };
 
+	//some printer for debug
+void printRouteConfig(const RouteConfig &route);
+void printServerConfig(const ServerConfig &server);
+
 #endif

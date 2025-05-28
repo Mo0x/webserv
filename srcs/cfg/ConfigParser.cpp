@@ -271,3 +271,47 @@ RouteConfig ConfigParser::parseLocationBlock(const std::vector <Token> tokens, s
 
     return ret;
 }
+
+
+//some printers for debug
+
+void printRouteConfig(const RouteConfig &route) {
+    std::cout << "  Location path: " << route.path << std::endl;
+    
+    std::cout << "    allowed_methods: ";
+    for (std::set<std::string>::const_iterator it = route.allowed_methods.begin();
+         it != route.allowed_methods.end(); ++it) {
+        std::cout << *it << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "    root: " << route.root << std::endl;
+    std::cout << "    index: " << route.index << std::endl;
+    std::cout << "    upload_path: " << route.upload_path << std::endl;
+    std::cout << "    autoindex: " << (route.autoindex ? "on" : "off") << std::endl;
+    std::cout << "    cgi_extension: " << route.cgi_extension << std::endl;
+    std::cout << "    cgi_path: " << route.cgi_path << std::endl;
+    std::cout << "    max_body_size: " << route.max_body_size << std::endl;
+    std::cout << "    redirect: " << route.redirect << std::endl;
+}
+
+void printServerConfig(const ServerConfig& server) {
+    std::cout << "=== Server Config ===" << std::endl;
+    std::cout << "host: " << server.host << std::endl;
+    std::cout << "port: " << server.port << std::endl;
+    std::cout << "server_name: " << server.server_name << std::endl;
+    std::cout << "root: " << server.root << std::endl;
+    std::cout << "index: " << server.index << std::endl;
+    std::cout << "client_max_body_size: " << server.client_max_body_size << std::endl;
+
+    std::cout << "error_pages:" << std::endl;
+    for (std::map<int, std::string>::const_iterator it = server.error_pages.begin();
+         it != server.error_pages.end(); ++it) {
+        std::cout << "  " << it->first << " => " << it->second << std::endl;
+    }
+
+    std::cout << "routes:" << std::endl;
+    for (size_t i = 0; i < server.routes.size(); ++i) {
+        printRouteConfig(server.routes[i]);
+    }
+}
