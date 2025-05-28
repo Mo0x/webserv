@@ -1,9 +1,9 @@
 NAME = ./webserv
 CXX = c++
 SRCS =	./srcs/main.cpp \
+		./srcs/cfg/Config.cpp \
 		./srcs/cfg/ConfigLexer.cpp \
 		./srcs/cfg/ConfigParser.cpp \
-		./srcs/cfg/ServerConfig.cpp \
 		./srcs/server/ServerSocket.cpp \
 		./srcs/server/SocketManager.cpp \
 		./srcs/utils/request_parser.cpp \
