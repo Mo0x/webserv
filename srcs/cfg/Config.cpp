@@ -5,3 +5,10 @@ ServerConfig::ServerConfig () :
 {
 	return ;
 }
+
+RouteConfig::RouteConfig() :
+	autoindex(false),
+	max_body_size(0)
+{
+	return ;
+}
