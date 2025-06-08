@@ -173,19 +173,35 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             route = parseLocationBlock(tokens, current);
             server.routes.push_back(route);
         }
-        else
+        else if (directive == "root") 
         {
-            std::cerr << "Attention : directive inconnue ou mal formée : " << directive
-                      << " à la ligne " << tokens[current].line << std::endl;
-            // Ignorer les jetons jusqu'au prochain ';'
-            while (current < tokens.size() && tokens[current].value != ";")
+            if (current >= tokens.size())
+                throw std::runtime_error("Unexpected end of tokens in 'root'");
+        server.root = tokens[current++].value;
+        if (tokens[current++].value != ";")
+        throw std::runtime_error("Expected ';' after root");
+        }
+        else if (directive == "index")
+        {
+            if (current >= tokens.size())
+                throw std::runtime_error("Unexpected end of tokens in 'index'");
+            server.index = tokens[current++].value;
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after index");
+        }
+        else 
+        {
+            std::cerr << "Unknown directive in location: " << directive << std::endl;
+
+            // Skip until ';' or '}'
+            while (current < tokens.size() && 
+                tokens[current].value != ";" && 
+                tokens[current].value != "}")
             {
                 current++;
             }
-            if (current < tokens.size())
-            {
-                current++;  // Consomme ';'
-            }
+            if (current < tokens.size() && tokens[current].value == ";")
+                current++; // skip semicolon
         }
     }
     
@@ -197,80 +213,78 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
     return (server);
 }
 
-RouteConfig ConfigParser::parseLocationBlock(const std::vector <Token> tokens, size_t &current)
+RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token> tokens, size_t &current)
 {
     RouteConfig ret;
-    
-    while (current < tokens.size() && tokens[current].value != "}")
-    {
+
+    while (current < tokens.size() && tokens[current].value != "}") {
         std::string directive = tokens[current++].value;
-        if (directive == "allowed_methods")
-        {
-            while (tokens[current].value != ";")
-            {
+
+        if (directive == "allowed_methods") {
+            while (tokens[current].value != ";") {
                 ret.allowed_methods.insert(tokens[current++].value);
                 if (current >= tokens.size())
                     throw std::runtime_error("Unexpected end of allowed_methods");
             }
-            current ++;
+            current++;
         }
-        else if (directive == "root")
-        {
+        else if (directive == "root") {
             ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after root");
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after root");
         }
-        else if (directive == "index")
-        {
-            ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after index");
+        else if (directive == "index") {
+            ret.index = tokens[current++].value;
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after index");
         }
-        else if (directive == "upload_path")
-        {
-            ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after upload_path");
+        else if (directive == "upload_path") {
+            ret.upload_path = tokens[current++].value;
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after upload_path");
         }
-        else if (directive == "autoindex")
-        {
-            ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after autoindex");
+        else if (directive == "autoindex") {
+            std::string value = tokens[current++].value;
+            ret.autoindex = (value == "on");
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after autoindex");
         }
-        else if (directive == "cgi_extension")
-        {
-            ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after cgi_extension");
+        else if (directive == "cgi_extension") {
+            ret.cgi_extension = tokens[current++].value;
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after cgi_extension");
         }
-        else if (directive == "max_body_size")
-        {
-            ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after max_body_size");
+        else if (directive == "cgi_path") {
+            ret.cgi_path = tokens[current++].value;
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after cgi_path");
         }
-        else if (directive == "redirect")
-        {
-            ret.root = tokens[current++].value;
-                if (current >= tokens.size())
-                    throw std::runtime_error("Unexpected ';' after redirect");
+        else if (directive == "max_body_size") {
+            ret.max_body_size = std::atoi(tokens[current++].value.c_str());
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after max_body_size");
         }
-        else
-        {
-            std::cerr << "Unkwon directive in location: " << directive << std::endl;
+        else if (directive == "redirect") {
+            ret.redirect = tokens[current++].value;
+            if (tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after redirect");
+        }
+        else {
+            std::cerr << "Unknown directive in location: " << directive << std::endl;
             while (tokens[current].value != ";" && tokens[current].value != "}")
-                current ++;
+                current++;
             if (tokens[current].value == ";")
                 current++;
         }
     }
+
     if (tokens[current].value != "}")
-        throw std::runtime_error("Expected } to close location block");
+        throw std::runtime_error("Expected '}' to close location block");
     current++;
 
     return ret;
 }
+
 
 
 //some printers for debug
