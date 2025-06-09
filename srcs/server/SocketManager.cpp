@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 22:13:37 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/06/09 18:20:07 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,7 +25,8 @@
 #include <sstream> // for std::ostringstream
 
 
-SocketManager::SocketManager()
+SocketManager::SocketManager(const Config &config) :
+	m_config(config)
 {
 	return ;
 }

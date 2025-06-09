@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/28 19:39:21 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/06/09 18:22:01 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -96,21 +96,23 @@ int main()
 {
 	try {
 		ConfigParser parser("config.conf");
-		const std::vector<ServerConfig> &servers = parser.getServers();
-		for (size_t i = 0; i < servers.size(); ++i)
+		Config config;
+		config.servers = parser.getServers();
+
+		for (size_t i = 0; i < config.servers.size(); ++i)
 		{
-			printServerConfig(servers[i]);
+			printServerConfig(config.servers[i]);
 		}
+
+		std::cout << "Starting webserv now..." << std::endl;
+
+		SocketManager sm(config);
+		sm.addServer("127.0.0.1", 8080); // or loop if multiple servers later
+		sm.run();
 	}
 	catch (const std::exception &e)
 	{
-		std::cerr << "Failed to parse config: " <<e.what() << std::endl;
+		std::cerr << "Failed to start webserv: " << e.what() << std::endl;
 	}
-
-
-	std::cout << "Starting webserv now..." << std::endl;
-    SocketManager sm;
-    sm.addServer("127.0.0.1", 8080);
-    sm.run();
-    return 0;
+	return 0;
 }
