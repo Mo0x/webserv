@@ -19,6 +19,8 @@ struct LocationConfig
     std::string uploadPath;                   // "/tmp/uploads"
     std::string cgiPath;                      // "/usr/bin/php-cgi"
     std::string cgiExtension;                 // ".php"
+	
+	LocationConfig() : autoindex(false) { }
 };
 
 class ServerConfig
@@ -54,6 +56,7 @@ class ServerConfig
 	void addErrorPage(int code, const std::string& path);
 	void setClientMaxBodySize(size_t size);
 	void addLocation(const LocationConfig& loc);
+	const LocationConfig* findBestLocation(const std::string& requestPath) const;
 };
 
 #endif

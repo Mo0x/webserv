@@ -1,6 +1,5 @@
-#include "to_delete_ServerConfig.hpp"
-
-/*to delete this file, keeping it for now in case we need to copy code from it*/
+#include "ServerConfig.hpp"
+#include <algorithm>
 
 ServerConfig::ServerConfig()
 	: m_host("0.0.0.0"), m_port(80), m_servername(""), m_error_pages(), m_locations(), m_clientMaxBodySize(1000000)
@@ -91,4 +90,28 @@ void ServerConfig::setClientMaxBodySize(size_t size)
 void ServerConfig::addLocation(const LocationConfig &loc)
 {
 	m_locations.push_back(loc);
+}
+
+const LocationConfig*
+ServerConfig::findBestLocation(const std::string& requestPath) const
+{
+    const LocationConfig*	best  = NULL;
+    size_t					bestLen = 0;
+
+    // Try each location block…
+    for (std::vector<LocationConfig>::const_iterator it = m_locations.begin(); it != m_locations.end(); ++it)
+	{
+        const std::string& locPath = it->path;                    // e.g. "/images"
+        // does requestPath start with locPath?
+        if (requestPath.compare(0, locPath.size(), locPath) == 0)
+		{
+            // prefer the longest matching prefix
+            if (locPath.size() > bestLen)
+			{
+                bestLen = locPath.size();
+                best    = &*it;
+            }
+        }
+    }
+    return best;
 }
