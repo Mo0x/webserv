@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 20:33:41 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/06/09 18:19:40 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,9 @@
 #define SOCKETMANAGER_HPP
 
 #include "ServerSocket.hpp"
+#include "utils.hpp"
+#include "Config.hpp"
+#include "request_parser.hpp"
 #include <vector>
 #include <poll.h>
 #include <map>
@@ -28,11 +31,12 @@ class SocketManager
 	std::set<int>                  m_serverFds;     // to distinguish server vs client
     std::map<int, std::string>     m_clientBuffers; // client fd → partial data
 	std::map<int, std::string>	m_clientWriteBuffers;
+	Config	m_config;
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
 
 	public:
-	SocketManager();
+	SocketManager(const Config &config);
 	~SocketManager();
 
 	void addServer(const std::string& host, unsigned short port);

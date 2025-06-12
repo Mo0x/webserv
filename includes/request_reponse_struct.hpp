@@ -20,5 +20,6 @@ struct Response {
     bool close_connection;                // Whether to close connection after response (Connection: close)
 };
 
+std::string build_http_response(const Response &res);
 
 #endif

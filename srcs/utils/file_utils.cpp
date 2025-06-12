@@ -18,15 +18,30 @@ std::string readFile(const std::string& path)
 	return ss.str();
 }
 
-
-bool isPathSafe(const std::string& base, const std::string& target)
+bool isPathTraversalSafe(const std::string &path)
 {
-	char resolvedBase[PATH_MAX];
-	char resolvedTarget[PATH_MAX];
+	return path.find("..") == std::string::npos;
+}
 
-	if (!realpath(base.c_str(), resolvedBase))
+bool isPathSafe(const std::string& basePath, const std::string& fullPath)
+{
+	/* 
+		use realpth to resolve things like "." ->current dir
+		"./www" -> "/home/user/webserv/www"
+	 */
+	char realBase[PATH_MAX];
+	if (!realpath(basePath.c_str(), realBase))
 		return false;
-	if (!realpath(target.c_str(), resolvedTarget))
+
+	// Canonical base path
+	std::string base(realBase);
+
+	// Canonical requested path's *parent directory*
+	std::string dirPart = fullPath.substr(0, fullPath.find_last_of('/'));
+	char realDir[PATH_MAX];
+	if (!realpath(dirPart.c_str(), realDir))
 		return false;
-	return std::string(resolvedTarget).find(std::string(resolvedBase)) == 0;
+
+	std::string realParent(realDir);
+	return (realParent.find(base) == 0);
 }
