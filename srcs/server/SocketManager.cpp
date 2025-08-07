@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/06/09 18:20:07 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/07 17:59:45 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,6 +24,16 @@
 #include <fcntl.h> 
 #include <sstream> // for std::ostringstream
 
+/*
+	1. getaddrinfo();
+	2. socket();
+	3. bind();
+	4. listen();
+	5. accept();
+	6. send() || recv();
+	7. close() || shutdown() close();
+
+*/
 
 SocketManager::SocketManager(const Config &config) :
 	m_config(config)
@@ -159,10 +169,10 @@ void SocketManager::handleClientRead(int fd)
 	std::string response;
 
 	if (!isPathSafe(basePath, fullPath)) {
-		response = buildErrorResponse(403);
+		response = buildErrorResponse(403, server);
 	}
 	else if (!fileExists(fullPath)) {
-		response = buildErrorResponse(404);
+		response = buildErrorResponse(404, server);
 	}
 	else {
 		std::string body = readFile(fullPath);
@@ -225,22 +235,40 @@ void SocketManager::handleClientDisconnect(int fd)
 	}
 }
 
-std::string SocketManager::buildErrorResponse(int code)
+static std::string getStatusMessage(int code)
+{
+	switch (code)
+	{
+	case 403: return "Forbidden";
+	case 404: return "Not Found";
+	case 413: return "Payload Too Large";
+	case 500: return "Internal Server Error";
+	default:  return "Error";
+	}
+}
+
+std::string SocketManager::buildErrorResponse(int code, const ServerConfig &server)
 {
 	Response res;
 	res.status_code = code;
 	res.close_connection = true;
 	res.headers["Content-Type"] = "text/html";
 
-	if (code == 403) {
-		res.status_message = "Forbidden";
-		res.body = "<h1>403 Forbidden</h1>";
-	} else {
-		res.status_code = 404;  // fallback
-		res.status_message = "Not Found";
-		res.body = "<h1>404 Not Found</h1>";
+	std::map<int, std::string>::const_iterator it = server.error_pages.find(code);
+	if (it != server.error_pages.end())
+	{
+		std::string path = server.root + it->second;
+		if (fileExists(path))
+		{
+			res.body = readFile(path);
+			res.status_message = getStatusMessage(code);
+			res.headers["Content-Length"] = to_string(res.body.length());
+			return build_http_response(res);
+		}
 	}
-
+	/*if no server error_pages*/
+	res.status_message = getStatusMessage(code);
+	res.body = "<h1>" + to_string(code) + " " + res.status_message + "</h1>";
 	res.headers["Content-Length"] = to_string(res.body.length());
 	return build_http_response(res);
 }
