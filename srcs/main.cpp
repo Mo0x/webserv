@@ -6,9 +6,43 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/06/09 18:22:01 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/12 18:07:30 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
+
+// TEST MAIN for build error reponse when multiple configs FOLLOWING :
+
+#include <iostream>
+#include "ConfigParser.hpp"
+#include "SocketManager.hpp"
+
+int main()
+{
+    try 
+    {
+        ConfigParser parser("config.conf");
+        const std::vector<ServerConfig>& servers = parser.getServers();
+        if (servers.empty())
+        {
+            std::cerr << "No server blocks defined!" << std::endl;
+            return 1;
+        }
+        std::cout << "Starting WebServer now..." << std::endl;
+        SocketManager sm;
+        sm.setServers(servers);
+
+        for (size_t i = 0; i < servers.size(); ++i)
+            sm.addServer(servers[i].host, servers[i].port);
+        sm.run();
+    }
+    catch (const std::exception & e)
+    {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        return 1;
+    }
+
+}
+
 
 /* #include <iostream>
 #include "ConfigParser.hpp"

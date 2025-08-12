@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/07 17:59:45 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/12 18:06:45 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,6 +37,11 @@
 
 SocketManager::SocketManager(const Config &config) :
 	m_config(config)
+{
+	return ;
+}
+
+SocketManager::SocketManager()
 {
 	return ;
 }
@@ -162,6 +167,7 @@ void SocketManager::handleClientRead(int fd)
 		return ;
 
 	Request req = parseRequest(m_clientBuffers[fd]);
+	const ServerConfig& server = m_serversConfig[0]; // Temporary?? Remember to check this
 	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
 	std::string basePath = "./www";
 	std::string fullPath = basePath + filePath;
@@ -271,6 +277,11 @@ std::string SocketManager::buildErrorResponse(int code, const ServerConfig &serv
 	res.body = "<h1>" + to_string(code) + " " + res.status_message + "</h1>";
 	res.headers["Content-Length"] = to_string(res.body.length());
 	return build_http_response(res);
+}
+
+void SocketManager::setServers(const std::vector<ServerConfig> & servers)
+{
+	m_serversConfig = servers;
 }
 
 

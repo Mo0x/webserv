@@ -76,7 +76,7 @@ void ConfigParser::parse()
 }
 
 // Modified parseServerBlock() method
-ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, size_t &current)
+/* ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, size_t &current)
 {
     ServerConfig server;
     if (tokens[current].value != "{")
@@ -154,7 +154,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
             }
             current++;  // Consomme ';'
         }
-        /* here is just added the parse Location bloc that call parseLocationBlock()*/
+        // here is just added the parse Location bloc that call parseLocationBlock()
         else if (directive == "location")
         {
             if (current >= tokens.size())
@@ -242,7 +242,113 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
     }
     current++;  // Consomme '}'
     return (server);
+} */
+
+// Parse fixed for build response error test:
+
+ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, size_t &current)
+{
+	ServerConfig server;
+
+	if (tokens[current].value != "{")
+		throw std::runtime_error("Expected '{' at beginning of server block.");
+	current++;
+
+	while (current < tokens.size() && tokens[current].value != "}")
+	{
+		std::string directive = tokens[current].value;
+		current++;
+
+		if (directive == "listen")
+		{
+			if (current >= tokens.size()) throw std::runtime_error("Missing value for 'listen'");
+			std::string listenValue = tokens[current++].value;
+
+			size_t colon = listenValue.find(':');
+			if (colon != std::string::npos)
+			{
+				server.host = listenValue.substr(0, colon);
+				server.port = std::atoi(listenValue.c_str() + colon + 1);
+			}
+			else
+			{
+				server.port = std::atoi(listenValue.c_str());
+			}
+
+			if (tokens[current++].value != ";")
+				throw std::runtime_error("Expected ';' after 'listen'");
+		}
+		else if (directive == "server_name")
+		{
+			if (current >= tokens.size()) throw std::runtime_error("Missing value for 'server_name'");
+			server.server_name = tokens[current++].value;
+			if (tokens[current++].value != ";")
+				throw std::runtime_error("Expected ';' after 'server_name'");
+		}
+		else if (directive == "root")
+		{
+			if (current >= tokens.size()) throw std::runtime_error("Missing value for 'root'");
+			server.root = tokens[current++].value;
+			if (tokens[current++].value != ";")
+				throw std::runtime_error("Expected ';' after 'root'");
+		}
+		else if (directive == "index")
+		{
+			if (current >= tokens.size()) throw std::runtime_error("Missing value for 'index'");
+			server.index = tokens[current++].value;
+			if (tokens[current++].value != ";")
+				throw std::runtime_error("Expected ';' after 'index'");
+		}
+		else if (directive == "error_page")
+		{
+			if (current + 1 >= tokens.size()) throw std::runtime_error("Invalid 'error_page' directive");
+
+			int code = std::atoi(tokens[current++].value.c_str());
+			std::string path = tokens[current++].value;
+
+			if (tokens[current++].value != ";")
+				throw std::runtime_error("Expected ';' after 'error_page'");
+
+			server.error_pages[code] = path;
+		}
+		else if (directive == "client_max_body_size")
+		{
+			if (current >= tokens.size()) throw std::runtime_error("Missing value for 'client_max_body_size'");
+			server.client_max_body_size = static_cast<size_t>(strtoul(tokens[current++].value.c_str(), NULL, 10));
+			if (tokens[current++].value != ";")
+				throw std::runtime_error("Expected ';' after 'client_max_body_size'");
+		}
+		else if (directive == "location")
+		{
+			if (current >= tokens.size()) throw std::runtime_error("Expected path after 'location'");
+			RouteConfig route;
+			route.path = tokens[current++].value;
+
+			if (current >= tokens.size() || tokens[current++].value != "{")
+				throw std::runtime_error("Expected '{' after location path");
+
+			route = parseLocationBlock(tokens, current);
+			server.routes.push_back(route);
+		}
+		else
+		{
+			std::cerr << "Unknown directive in server block: " << directive << std::endl;
+
+			// Skip to next semicolon or closing brace
+			while (current < tokens.size() && tokens[current].value != ";" && tokens[current].value != "}")
+				current++;
+			if (tokens[current].value == ";")
+				current++;
+		}
+	}
+
+	if (tokens[current].value != "}")
+		throw std::runtime_error("Expected '}' to close server block");
+
+	current++; // consume '}'
+	return server;
 }
+
 
 RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token> tokens, size_t &current)
 {

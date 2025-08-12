@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/07 16:59:48 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/12 18:06:14 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,6 +31,7 @@ class SocketManager
 	std::set<int>                  m_serverFds;     // to distinguish server vs client
     std::map<int, std::string>     m_clientBuffers; // client fd → partial data
 	std::map<int, std::string>	m_clientWriteBuffers;
+	std::vector<ServerConfig> m_serversConfig;
 	Config	m_config;
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
@@ -38,6 +39,7 @@ class SocketManager
 	public:
 	SocketManager(const Config &config);
 	~SocketManager();
+	SocketManager();
 
 	void addServer(const std::string& host, unsigned short port);
 	void initPoll();
@@ -50,6 +52,8 @@ class SocketManager
 	void handleClientDisconnect(int fd);
 	void handleClientWrite(int fd);
 	std::string buildErrorResponse(int code, const ServerConfig &server);
+
+	void setServers(const std::vector<ServerConfig> & servers);
 };
 
 #endif
