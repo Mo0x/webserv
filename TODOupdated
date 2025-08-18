@@ -1,0 +1,168 @@
+✅ COMPLETED
+🧠 1. Non-blocking Server Loop (poll() + socket setup)
+
+What it is:
+You’ve built a server that uses poll() to handle multiple connections without blocking. This means the server can talk to many clients at the same time, even if they’re slow or not responding.
+
+Why it's required:
+The subject explicitly says:
+
+"Your server must remain non-blocking at all times."
+
+If your server used blocking recv() or accept(), it could freeze waiting for a single client. Using poll() lets you avoid that.
+
+📁 2. Config Parsing (config.conf)
+
+What it is:
+Your server reads settings from a config file — just like NGINX or Apache. You support:
+
+listen (port)
+
+server_name
+
+location blocks
+
+root, index, allowed_methods, error_page, upload_path, etc.
+
+Why it's required:
+The subject wants your server to be configurable without recompiling. It mimics a real-world HTTP server where admin configures routing, behavior, and limits using a file.
+
+📄 3. Serving Static Files (GET)
+
+What it is:
+A request like GET /index.html returns the contents of ./www/index.html.
+
+Why it's required:
+A core part of an HTTP server. Users expect the ability to browse and retrieve files. Without this, it’s not a web server.
+
+🚫 4. Custom Error Pages (403, 404)
+
+What it is:
+If a file is missing (404) or forbidden (403), your server checks if a custom error page like /404.html is configured and uses it.
+
+Why it's required:
+Customizability is key in real servers. Admins don’t want ugly default messages — they want control over how errors look.
+
+⚙️ 5. HTTP Response Builder
+
+What it is:
+You generate raw HTTP responses with proper headers (Content-Type, Content-Length, etc).
+
+Why it's required:
+Clients expect strict adherence to the HTTP/1.1 protocol. Without correct headers, browsers or curl may behave unpredictably.
+
+🟡 IN PROGRESS / PARTIAL
+🗂️ 6. Routing Logic (Matching Location Blocks)
+
+What it is:
+When a user accesses /upload, it should follow settings inside:
+	location /upload {
+  ...
+}
+Right now, you're only partially using location settings.
+
+Why it's required:
+This is the core mechanism to define different behavior per path (e.g., CGI for /cgi-bin/, uploads for /upload, etc).
+Without this, your server behaves the same no matter what’s requested.
+
+⬆️ 7. Upload Handling (POST)
+
+What it is:
+When a browser sends a form with a file (method POST), your server should read the body, parse it (usually multipart/form-data), and save it in the location set by upload_path.
+
+Why it's required:
+Uploading is part of HTTP/1.1 and web forms. The subject asks you to support file uploads, so users can POST files via HTML.
+
+🧠 8. CGI Support (in progress in repo)
+
+What it is:
+CGI is a way to execute scripts on the server (e.g., PHP, Python) and return the result as the HTTP response.
+
+You already have a CGIHandler.cpp file. What’s missing is connecting it to requests that match location with a cgi_extension.
+
+Why it's required:
+The subject requires CGI support — this is one of the core challenges. It proves you can:
+
+spawn processes
+
+handle pipes
+
+manage environment variables
+
+work with I/O redirection (dup2)
+
+✅ 9. allowed_methods (but not enforced yet)
+
+What it is:
+You parse the allowed_methods GET POST line in config.conf — but don’t yet enforce it. If someone sends DELETE and it’s not allowed, your server should return 405.
+
+Why it's required:
+The subject wants you to respect and enforce allowed methods for each location.
+
+❌ NOT YET IMPLEMENTED
+📂 10. Autoindex
+
+What it is:
+If someone accesses a directory like /files/ and no index.html exists, but autoindex on; is set — your server should return a dynamically-generated HTML list of files in that directory.
+
+Why it's required:
+This is a required feature per subject and mimics autoindex in NGINX.
+
+📬 11. Full Body Parsing (for POST, CGI, uploads)
+
+What it is:
+Your current handleClientRead doesn’t wait for body content (e.g., in a POST). It just reads until \r\n\r\n.
+
+Why it's required:
+To upload files or run CGI scripts that read from stdin, you must:
+
+wait until Content-Length bytes are received
+
+pass the body properly
+
+❌ 12. Method Enforcement
+
+What it is:
+If a method is not listed in allowed_methods, return 405 Method Not Allowed.
+
+Why it's required:
+The subject says:
+
+You must handle 405 Method Not Allowed if method is disallowed by location config.
+
+⚙️ 13. CGI Integration (missing)
+
+What it is:
+The code exists but is not plugged into the request handler. You must:
+
+detect when a location matches .php or .py
+
+fork + dup2
+
+wait on child
+
+use response
+
+Why it's required:
+Mandatory for full marks. Also one of the most complex parts (pipes, env, fork).
+
+🌐 14. HTTP/1.1 Features (Keep-Alive, etc.)
+
+What it is:
+Your server closes the connection after every response. That’s fine, but HTTP/1.1 allows persistent connections. It’s optional but nice.
+
+Why it's optional:
+Subject doesn’t require full spec — just core behavior. But this is a bonus-level polish.
+
+🎯 Overall Summary
+Category	Features	Status
+Core Socket Server	Non-blocking, poll(), accept(), read/write	✅ Done
+Config System	Fully working parser with location support	✅ Done
+Static File Handling	200, 403, 404, custom error pages	✅ Done
+HTTP Parser	Simplified GET/POST (no full body)	🟡 Partial
+Routing Logic	Location-based settings partially respected	🟡 Partial
+Upload & POST	Upload logic present, not wired in	🟡 Partial
+CGI Support	Code exists, not plugged in	🟡 Partial
+Method Checks	Parsed but not enforced	❌ Missing
+Autoindex	Directory listing not implemented	❌ Missing
+Bonus / Polishing	Logging, Keep-Alive, HTTPS, etc.	❌ Optional

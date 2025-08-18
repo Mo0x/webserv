@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/12 18:06:45 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/18 15:56:59 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -149,6 +149,14 @@ void SocketManager::handleNewConnection(int listen_fd)
 	m_pollfds.push_back(pdf);
 
 	m_clientBuffers[client_fd] = "";
+	for (size_t i = 0; i < m_servers.size(); ++i)
+	{
+		if (m_servers[i]->getFd() == listen_fd)
+		{
+			m_clientToServerIndex[client_fd] = i;
+			break;
+		}
+	}
 }
 
 void SocketManager::handleClientRead(int fd)
@@ -167,7 +175,7 @@ void SocketManager::handleClientRead(int fd)
 		return ;
 
 	Request req = parseRequest(m_clientBuffers[fd]);
-	const ServerConfig& server = m_serversConfig[0]; // Temporary?? Remember to check this
+	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
 	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
 	std::string basePath = "./www";
 	std::string fullPath = basePath + filePath;
@@ -231,6 +239,8 @@ void SocketManager::handleClientDisconnect(int fd)
 	std::cout << "Disconnecting fd " << fd << std::endl;
 	close(fd);
 	m_clientBuffers.erase(fd);
+	m_clientWriteBuffers.erase(fd);
+	m_clientToServerIndex.erase(fd);
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
 		if (m_pollfds[i].fd == fd)
@@ -263,16 +273,24 @@ std::string SocketManager::buildErrorResponse(int code, const ServerConfig &serv
 	std::map<int, std::string>::const_iterator it = server.error_pages.find(code);
 	if (it != server.error_pages.end())
 	{
-		std::string path = server.root + it->second;
-		if (fileExists(path))
+		std::string relativePath = it->second;
+		if (!relativePath.empty() && relativePath[0] == '/')
+			relativePath = relativePath.substr(1);
+
+		std::string fullPath = server.root + "/" + relativePath;
+		std::cout << "[DEBUG] server.root = " << server.root << std::endl;
+		std::cout << "[DEBUG] Looking for custom error page: " << fullPath << std::endl;
+
+		if (fileExists(fullPath))
 		{
-			res.body = readFile(path);
+			res.body = readFile(fullPath);
 			res.status_message = getStatusMessage(code);
 			res.headers["Content-Length"] = to_string(res.body.length());
 			return build_http_response(res);
 		}
 	}
-	/*if no server error_pages*/
+
+	// fallback default body
 	res.status_message = getStatusMessage(code);
 	res.body = "<h1>" + to_string(code) + " " + res.status_message + "</h1>";
 	res.headers["Content-Length"] = to_string(res.body.length());
@@ -284,7 +302,16 @@ void SocketManager::setServers(const std::vector<ServerConfig> & servers)
 	m_serversConfig = servers;
 }
 
+const ServerConfig& SocketManager::findServerForClient(int fd) const
+{
+	std::map<int, size_t>::const_iterator it = m_clientToServerIndex.find(fd);
+	if (it == m_clientToServerIndex.end())
+		return m_config.servers[it->second];
+	throw std::runtime_error("No matching server config for client FD");
+}
 
+
+//previous run funciton now its cleaner and divided in multiple functions.
 
 /* void SocketManager::run()
 {

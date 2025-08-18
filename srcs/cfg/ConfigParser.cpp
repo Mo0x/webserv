@@ -41,7 +41,7 @@ ConfigParser::~ConfigParser() {}
 
 const std::vector<ServerConfig> &ConfigParser::getServers() const
 {
-    return this->m_servers;
+    return m_servers;
 }
 
 void ConfigParser::parse()

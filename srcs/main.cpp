@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/12 18:07:30 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/18 15:45:07 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,7 +21,8 @@ int main()
     try 
     {
         ConfigParser parser("config.conf");
-        const std::vector<ServerConfig>& servers = parser.getServers();
+        //const std::vector<ServerConfig>& servers = parser.getServers();
+        std::vector<ServerConfig> servers = parser.getServers();
         if (servers.empty())
         {
             std::cerr << "No server blocks defined!" << std::endl;
