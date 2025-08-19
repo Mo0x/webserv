@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/18 15:45:07 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/19 19:19:43 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,19 +16,24 @@
 #include "ConfigParser.hpp"
 #include "SocketManager.hpp"
 
-int main()
+int main(int argc, char** argv)
 {
     try 
     {
-        ConfigParser parser("config.conf");
-        //const std::vector<ServerConfig>& servers = parser.getServers();
+        std::string configFile = "config.conf";  // default fallback
+        if (argc > 1)
+            configFile = argv[1];
+
+        ConfigParser parser(configFile);
         std::vector<ServerConfig> servers = parser.getServers();
         if (servers.empty())
         {
             std::cerr << "No server blocks defined!" << std::endl;
             return 1;
         }
+
         std::cout << "Starting WebServer now..." << std::endl;
+
         SocketManager sm;
         sm.setServers(servers);
 
@@ -41,7 +46,6 @@ int main()
         std::cerr << "Fatal error: " << e.what() << std::endl;
         return 1;
     }
-
 }
 
 

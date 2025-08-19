@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/18 15:56:59 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/19 18:12:55 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -159,7 +159,94 @@ void SocketManager::handleNewConnection(int listen_fd)
 	}
 }
 
+void SocketManager::setPollToWrite(int fd)
+{
+	for (size_t i = 0; i < m_pollfds.size(); ++i)
+	{
+		if (m_pollfds[i].fd == fd)
+		{
+			m_pollfds[i].events = POLLOUT;
+			break;
+		}
+	}
+}
+
 void SocketManager::handleClientRead(int fd)
+{
+	char buffer[1024];
+	int bytes = recv(fd, buffer, sizeof(buffer), 0);
+	if (bytes <= 0)
+	{
+		handleClientDisconnect(fd);
+		return;
+	}
+	m_clientBuffers[fd].append(buffer, bytes);
+
+	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
+		return;
+
+	Request req = parseRequest(m_clientBuffers[fd]);
+	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
+	const RouteConfig* route = findMatchingLocation(server, req.path);
+
+	std::string effectiveRoot = (route && !route->root.empty()) ? route->root : server.root;
+	std::string effectiveIndex = (route && !route->index.empty()) ? route->index : server.index;
+
+	// Check if method is allowed
+	if (route && !route->allowed_methods.empty() &&
+		route->allowed_methods.find(req.method) == route->allowed_methods.end())
+	{
+		std::string response = buildErrorResponse(405, server); // Method Not Allowed
+		m_clientWriteBuffers[fd] = response;
+		setPollToWrite(fd);
+		return;
+	}
+
+	// === URI REWRITE ===
+	std::string strippedPath = req.path;
+
+	if (route && strippedPath.find(route->path) == 0)
+		strippedPath = strippedPath.substr(route->path.length());
+
+	if (strippedPath.empty() || strippedPath[strippedPath.length() - 1] == '/')
+		strippedPath = "/" + effectiveIndex;
+	std::cout << "[DEBUG] route->path: " << (route ? route->path : "NULL") << std::endl;
+	std::cout << "[DEBUG] strippedPath: " << strippedPath << std::endl;
+
+	// Ensure leading slash
+	if (!strippedPath.empty() && strippedPath[0] != '/')
+		strippedPath = "/" + strippedPath;
+
+	std::string fullPath = effectiveRoot + strippedPath;
+	std::cout << "[DEBUG] fullPath: " << fullPath << std::endl;
+
+	std::string response;
+
+	if (!isPathSafe(effectiveRoot, fullPath)) {
+		response = buildErrorResponse(403, server);
+	}
+	else if (!fileExists(fullPath)) {
+		response = buildErrorResponse(404, server);
+	}
+	else {
+		std::string body = readFile(fullPath);
+		Response res;
+		res.status_code = 200;
+		res.status_message = "OK";
+		res.body = body;
+		res.headers["Content-Type"] = "text/html";
+		res.headers["Content-Length"] = to_string(body.length());
+		res.close_connection = true;
+		response = build_http_response(res);
+	}
+
+	m_clientWriteBuffers[fd] = response;
+	setPollToWrite(fd);
+}
+
+//previous handleClientRead() without rooting logic
+
+/* void SocketManager::handleClientRead(int fd)
 {
 	char buffer[1024];
 	int bytes = recv(fd, buffer, sizeof(buffer), 0);
@@ -175,7 +262,7 @@ void SocketManager::handleClientRead(int fd)
 		return ;
 
 	Request req = parseRequest(m_clientBuffers[fd]);
-	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
+	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]]; 
 	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
 	std::string basePath = "./www";
 	std::string fullPath = basePath + filePath;
@@ -211,7 +298,7 @@ void SocketManager::handleClientRead(int fd)
 			break;
 		}
 	}
-}
+} */
 
 void SocketManager::handleClientWrite(int fd)
 {

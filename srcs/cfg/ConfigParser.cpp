@@ -318,18 +318,21 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
 			if (tokens[current++].value != ";")
 				throw std::runtime_error("Expected ';' after 'client_max_body_size'");
 		}
+
 		else if (directive == "location")
-		{
-			if (current >= tokens.size()) throw std::runtime_error("Expected path after 'location'");
-			RouteConfig route;
-			route.path = tokens[current++].value;
+        {
+            if (current >= tokens.size()) throw std::runtime_error("Expected path after 'location'");
+            std::string locPath = tokens[current++].value;
 
-			if (current >= tokens.size() || tokens[current++].value != "{")
-				throw std::runtime_error("Expected '{' after location path");
+            if (current >= tokens.size() || tokens[current++].value != "{")
+                throw std::runtime_error("Expected '{' after location path");
 
-			route = parseLocationBlock(tokens, current);
-			server.routes.push_back(route);
-		}
+            RouteConfig route = parseLocationBlock(tokens, current);
+	        route.path = locPath;  // ✅ set the path after parsing
+            std::cout << "[DEBUG] Parsed location path: '" << route.path << "'" << std::endl;
+            server.routes.push_back(route);
+        }
+
 		else
 		{
 			std::cerr << "Unknown directive in server block: " << directive << std::endl;
@@ -350,7 +353,7 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
 }
 
 
-RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token> tokens, size_t &current)
+RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens, size_t &current)
 {
     RouteConfig ret;
 

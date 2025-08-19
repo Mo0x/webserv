@@ -23,7 +23,7 @@ class ConfigParser
 	//static std::vector<std::string> split(const std::string& line);
 	// Recursively parses a server block from tokens.
 	ServerConfig parseServerBlock(const std::vector<Token>& tokens, size_t &current);
-	RouteConfig parseLocationBlock(const std::vector <Token> tokens, size_t &current);
+	RouteConfig parseLocationBlock(const std::vector <Token>& tokens, size_t &current);
 
 	public:
 	ConfigParser();
