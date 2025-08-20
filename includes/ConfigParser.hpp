@@ -1,7 +1,8 @@
 #ifndef CONFIGPARSER_HPP
 #define CONFIGPARSER_HPP
 
-#include "ServerConfig.hpp"
+//#include "ServerConfig.hpp"
+#include "Config.hpp"
 #include "ConfigLexer.hpp" 
 #include <vector>
 #include <string>
@@ -22,6 +23,7 @@ class ConfigParser
 	//static std::vector<std::string> split(const std::string& line);
 	// Recursively parses a server block from tokens.
 	ServerConfig parseServerBlock(const std::vector<Token>& tokens, size_t &current);
+	RouteConfig parseLocationBlock(const std::vector <Token>& tokens, size_t &current);
 
 	public:
 	ConfigParser();
@@ -32,5 +34,9 @@ class ConfigParser
 
 	const std::vector<ServerConfig> &getServers() const;
 };
+
+	//some printer for debug
+void printRouteConfig(const RouteConfig &route);
+void printServerConfig(const ServerConfig &server);
 
 #endif

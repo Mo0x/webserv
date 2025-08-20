@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/05/25 20:48:46 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/19 18:12:55 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,7 @@
 #include "request_parser.hpp"
 #include "request_reponse_struct.hpp"
 #include "file_utils.hpp"
+#include "utils.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <stdexcept>  // std::runtime_error
@@ -23,6 +24,22 @@
 #include <fcntl.h> 
 #include <sstream> // for std::ostringstream
 
+/*
+	1. getaddrinfo();
+	2. socket();
+	3. bind();
+	4. listen();
+	5. accept();
+	6. send() || recv();
+	7. close() || shutdown() close();
+
+*/
+
+SocketManager::SocketManager(const Config &config) :
+	m_config(config)
+{
+	return ;
+}
 
 SocketManager::SocketManager()
 {
@@ -132,6 +149,26 @@ void SocketManager::handleNewConnection(int listen_fd)
 	m_pollfds.push_back(pdf);
 
 	m_clientBuffers[client_fd] = "";
+	for (size_t i = 0; i < m_servers.size(); ++i)
+	{
+		if (m_servers[i]->getFd() == listen_fd)
+		{
+			m_clientToServerIndex[client_fd] = i;
+			break;
+		}
+	}
+}
+
+void SocketManager::setPollToWrite(int fd)
+{
+	for (size_t i = 0; i < m_pollfds.size(); ++i)
+	{
+		if (m_pollfds[i].fd == fd)
+		{
+			m_pollfds[i].events = POLLOUT;
+			break;
+		}
+	}
 }
 
 void SocketManager::handleClientRead(int fd)
@@ -141,51 +178,134 @@ void SocketManager::handleClientRead(int fd)
 	if (bytes <= 0)
 	{
 		handleClientDisconnect(fd);
+		return;
+	}
+	m_clientBuffers[fd].append(buffer, bytes);
+
+	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
+		return;
+
+	Request req = parseRequest(m_clientBuffers[fd]);
+	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
+	const RouteConfig* route = findMatchingLocation(server, req.path);
+
+	std::string effectiveRoot = (route && !route->root.empty()) ? route->root : server.root;
+	std::string effectiveIndex = (route && !route->index.empty()) ? route->index : server.index;
+
+	// Check if method is allowed
+	if (route && !route->allowed_methods.empty() &&
+		route->allowed_methods.find(req.method) == route->allowed_methods.end())
+	{
+		std::string response = buildErrorResponse(405, server); // Method Not Allowed
+		m_clientWriteBuffers[fd] = response;
+		setPollToWrite(fd);
+		return;
+	}
+
+	// === URI REWRITE ===
+	std::string strippedPath = req.path;
+
+	if (route && strippedPath.find(route->path) == 0)
+		strippedPath = strippedPath.substr(route->path.length());
+
+	if (strippedPath.empty() || strippedPath[strippedPath.length() - 1] == '/')
+		strippedPath = "/" + effectiveIndex;
+	std::cout << "[DEBUG] route->path: " << (route ? route->path : "NULL") << std::endl;
+	std::cout << "[DEBUG] strippedPath: " << strippedPath << std::endl;
+
+	// Ensure leading slash
+	if (!strippedPath.empty() && strippedPath[0] != '/')
+		strippedPath = "/" + strippedPath;
+
+	std::string fullPath = effectiveRoot + strippedPath;
+	std::cout << "[DEBUG] fullPath: " << fullPath << std::endl;
+
+	std::string response;
+
+	if (!isPathSafe(effectiveRoot, fullPath)) {
+		response = buildErrorResponse(403, server);
+	}
+	else if (!fileExists(fullPath)) {
+		response = buildErrorResponse(404, server);
+	}
+	else {
+		std::string body = readFile(fullPath);
+		Response res;
+		res.status_code = 200;
+		res.status_message = "OK";
+		res.body = body;
+		res.headers["Content-Type"] = "text/html";
+		res.headers["Content-Length"] = to_string(body.length());
+		res.close_connection = true;
+		response = build_http_response(res);
+	}
+
+	m_clientWriteBuffers[fd] = response;
+	setPollToWrite(fd);
+}
+
+//previous handleClientRead() without rooting logic
+
+/* void SocketManager::handleClientRead(int fd)
+{
+	char buffer[1024];
+	int bytes = recv(fd, buffer, sizeof(buffer), 0);
+	if (bytes <= 0)
+	{
+		handleClientDisconnect(fd);
 		return ;
 	}
 	m_clientBuffers[fd].append(buffer, bytes);
+
+	// Wait for full HTTP request (simplified, assumes no body)
 	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
 		return ;
-	Request req = parseRequest(m_clientBuffers[fd]);
 
-	// HARDCODED for now needs to be dynamic later
+	Request req = parseRequest(m_clientBuffers[fd]);
+	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]]; 
 	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
-	std::string basePath = "./www"; 
-	std::string fullPath =  basePath + filePath;
+	std::string basePath = "./www";
+	std::string fullPath = basePath + filePath;
 
 	std::string response;
-	if (!isPathSafe(basePath, fullPath))
-		response = buildErrorResponse(403);
-	else if (!fileExists(fullPath))
-		response = buildErrorResponse(404);
-	else
-	{
-		std::string body = readFile(fullPath);
-		std::ostringstream oss;
-		oss << "HTTP/1.1 200 OK\r\n"
-			<< "Content-Length: " << body.size() << "\r\n"
-			<< "Content-Type: text/html\r\n\r\n"
-			<< body;
-		response = oss.str();
+
+	if (!isPathSafe(basePath, fullPath)) {
+		response = buildErrorResponse(403, server);
 	}
+	else if (!fileExists(fullPath)) {
+		response = buildErrorResponse(404, server);
+	}
+	else {
+		std::string body = readFile(fullPath);
+		Response res;
+		res.status_code = 200;
+		res.status_message = "OK";
+		res.body = body;
+		res.headers["Content-Type"] = "text/html";
+		res.headers["Content-Length"] = to_string(body.length());
+		res.close_connection = true;
+		response = build_http_response(res);
+	}
+
 	m_clientWriteBuffers[fd] = response;
 
+	// Update pollfd to POLLOUT so we can send the response
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
 		if (m_pollfds[i].fd == fd)
 		{
 			m_pollfds[i].events = POLLOUT;
-			break ;
+			break;
 		}
 	}
-}
+} */
 
 void SocketManager::handleClientWrite(int fd)
 {
 	if (m_clientWriteBuffers.find(fd) == m_clientWriteBuffers.end())
 		return ;
 	std::string &buffer = m_clientWriteBuffers[fd];
-	ssize_t sent = send (fd, buffer.c_str(), buffer.size(), 0);
+	ssize_t sent = send(fd, buffer.c_str(), buffer.size(), 0);
 	if (sent < 0)
 	{
 		perror("send() failed");
@@ -206,6 +326,8 @@ void SocketManager::handleClientDisconnect(int fd)
 	std::cout << "Disconnecting fd " << fd << std::endl;
 	close(fd);
 	m_clientBuffers.erase(fd);
+	m_clientWriteBuffers.erase(fd);
+	m_clientToServerIndex.erase(fd);
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
 		if (m_pollfds[i].fd == fd)
@@ -216,30 +338,67 @@ void SocketManager::handleClientDisconnect(int fd)
 	}
 }
 
-std::string SocketManager::buildErrorResponse(int code)
+static std::string getStatusMessage(int code)
 {
-	std::string body;
-	std::string status;
-
-	if (code == 403)
+	switch (code)
 	{
-		body = "<h1> 403 Forbidden</h1>";
-		status = "403 Forbidden";
+	case 403: return "Forbidden";
+	case 404: return "Not Found";
+	case 413: return "Payload Too Large";
+	case 500: return "Internal Server Error";
+	default:  return "Error";
 	}
-	else
-	{
-		body = "<h1> 404 Not Found</h1>";
-		status = "404 Not Found";
-	}
-	std::ostringstream oss;
-	oss << "HTTPL/1.1 " << status << "\r\n"
-		<< "Content-Lenght: " << body.size() << "\r\n"
-		<< "Content-Type: text/html\r\n\r\n"
-		<< body;
-
-	return oss.str();
 }
 
+std::string SocketManager::buildErrorResponse(int code, const ServerConfig &server)
+{
+	Response res;
+	res.status_code = code;
+	res.close_connection = true;
+	res.headers["Content-Type"] = "text/html";
+
+	std::map<int, std::string>::const_iterator it = server.error_pages.find(code);
+	if (it != server.error_pages.end())
+	{
+		std::string relativePath = it->second;
+		if (!relativePath.empty() && relativePath[0] == '/')
+			relativePath = relativePath.substr(1);
+
+		std::string fullPath = server.root + "/" + relativePath;
+		std::cout << "[DEBUG] server.root = " << server.root << std::endl;
+		std::cout << "[DEBUG] Looking for custom error page: " << fullPath << std::endl;
+
+		if (fileExists(fullPath))
+		{
+			res.body = readFile(fullPath);
+			res.status_message = getStatusMessage(code);
+			res.headers["Content-Length"] = to_string(res.body.length());
+			return build_http_response(res);
+		}
+	}
+
+	// fallback default body
+	res.status_message = getStatusMessage(code);
+	res.body = "<h1>" + to_string(code) + " " + res.status_message + "</h1>";
+	res.headers["Content-Length"] = to_string(res.body.length());
+	return build_http_response(res);
+}
+
+void SocketManager::setServers(const std::vector<ServerConfig> & servers)
+{
+	m_serversConfig = servers;
+}
+
+const ServerConfig& SocketManager::findServerForClient(int fd) const
+{
+	std::map<int, size_t>::const_iterator it = m_clientToServerIndex.find(fd);
+	if (it == m_clientToServerIndex.end())
+		return m_config.servers[it->second];
+	throw std::runtime_error("No matching server config for client FD");
+}
+
+
+//previous run funciton now its cleaner and divided in multiple functions.
 
 /* void SocketManager::run()
 {
@@ -347,11 +506,9 @@ std::string SocketManager::buildErrorResponse(int code)
 								continue;
 							}
 							std::string response;
-
-							if (fileExists(fullPath))
+							if (file_utils::exists(fullPath))
 							{
-								std::string body = readFile(fullPath);
-								std::ostringstream oss;
+								std::string body = file_utils::readFile(fullPath);								std::ostringstream oss;
 								oss << "HTTP/1.1 200 OK\r\n";
 								oss << "Content-Length: " << body.size() << "\r\n";
 								oss << "Content-Type: text/html\r\n"; // TODO: detect MIME type
