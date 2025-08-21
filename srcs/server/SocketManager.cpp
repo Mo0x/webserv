@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/19 18:12:55 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/21 19:00:15 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -219,6 +219,24 @@ void SocketManager::handleClientRead(int fd)
 
 	std::string fullPath = effectiveRoot + strippedPath;
 	std::cout << "[DEBUG] fullPath: " << fullPath << std::endl;
+	
+	/*TRAILLING SLASH handling*/
+	if (dirExists(fullPath))
+	{
+		if (!req.path.empty() && req.path[req.path.length() - 1] != '/')
+		{
+			Response res;
+			res.status_code = 301;
+			res.status_message = "Moved Permanently";
+			res.headers["Location"] = req.path + "/";
+			res.headers["Content-Length"] = "0";
+			res.close_connection = true;
+			std::string redirectResponse = build_http_response(res);
+			m_clientWriteBuffers[fd] = redirectResponse;
+			setPollToWrite(fd);
+			return ;
+		}
+	}
 
 	std::string response;
 
