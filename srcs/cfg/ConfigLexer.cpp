@@ -40,6 +40,13 @@ void ConfigLexer::lex()
             _current++;
             continue;
         }
+        if (c == '#') {
+        // skip to the end of the line
+            while (_current < _source.length() && _source[_current] != '\n')
+                _current++;
+            continue;
+        }
+
 
         // SYMBOLS: { } ;
         if (c == '{' || c == '}' || c == ';')

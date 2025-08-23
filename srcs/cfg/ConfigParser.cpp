@@ -256,8 +256,16 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
 
 	while (current < tokens.size() && tokens[current].value != "}")
 	{
-		std::string directive = tokens[current].value;
-		current++;
+        std::cout << "[DEBUG] Token: '" << tokens[current].value << "'" << std::endl;
+        /*ADDED COMMENT INLINE ONLY as : #comnmented line*/
+        std::string raw = tokens[current].value;
+        if (raw.empty() || raw[0] == '#')
+        {
+            ++current;
+            continue;
+        }
+        std::string directive = raw; 
+        current++;
 
 		if (directive == "listen")
 		{
@@ -358,8 +366,14 @@ RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens, s
     RouteConfig ret;
 
     while (current < tokens.size() && tokens[current].value != "}") {
-        std::string directive = tokens[current++].value;
+        std::string raw = tokens[current].value;
+        if (raw.empty() || raw[0] == '#') {
+            ++current;
+            continue;
+        }
 
+        std::string directive = raw;
+        ++current;
         if (directive == "allowed_methods") {
             while (tokens[current].value != ";") {
                 ret.allowed_methods.insert(tokens[current++].value);
@@ -422,6 +436,7 @@ RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens, s
         throw std::runtime_error("Expected '}' to close location block");
     current++;
 
+    std::cout << "[DEBUG] Parsed location index: '" << ret.index << "'" << std::endl;
     return ret;
 }
 
