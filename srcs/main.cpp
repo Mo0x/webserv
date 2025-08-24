@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/03/20 16:04:39 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/20 13:28:43 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/20 15:01:26 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -46,6 +46,7 @@ int main(int argc, char** argv)
         std::cerr << "Fatal error: " << e.what() << std::endl;
         return 1;
     }
+    return 0;
 }
 
 

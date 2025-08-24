@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/19 18:12:55 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/24 19:49:40 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -208,8 +208,6 @@ void SocketManager::handleClientRead(int fd)
 	if (route && strippedPath.find(route->path) == 0)
 		strippedPath = strippedPath.substr(route->path.length());
 
-	if (strippedPath.empty() || strippedPath[strippedPath.length() - 1] == '/')
-		strippedPath = "/" + effectiveIndex;
 	std::cout << "[DEBUG] route->path: " << (route ? route->path : "NULL") << std::endl;
 	std::cout << "[DEBUG] strippedPath: " << strippedPath << std::endl;
 
@@ -219,7 +217,59 @@ void SocketManager::handleClientRead(int fd)
 
 	std::string fullPath = effectiveRoot + strippedPath;
 	std::cout << "[DEBUG] fullPath: " << fullPath << std::endl;
+	
+	if (dirExists(fullPath))
+	{
+		/*TRAILLING SLASH handling*/
+		if (!req.path.empty() && req.path[req.path.length() - 1] != '/')
+		{
+			Response res;
+			res.status_code = 301;
+			res.status_message = "Moved Permanently";
+			res.headers["Location"] = req.path + "/";
+			res.headers["Content-Length"] = "0";
+			res.close_connection = true;
+			std::string redirectResponse = build_http_response(res);
+			m_clientWriteBuffers[fd] = redirectResponse;
+			setPollToWrite(fd);
+			return ;
+		}
+		std::string indexCandidate = fullPath + "/" + effectiveIndex;
+		std::cout << "[DEBUG] Trying index candidate: " << indexCandidate << std::endl;
+		if (fileExists(indexCandidate))
+		{
+			std::string body = readFile(indexCandidate);
+			Response res;
+			res.status_code = 200;
+			res.status_message = "OK";
+			res.body = body;
+			res.headers["Content-Type"] = "text/html";
+			res.headers["Content-Length"] = to_string(body.length());
+			res.close_connection = true;
+			std::string response = build_http_response(res);
+			m_clientWriteBuffers[fd] = response;
+			setPollToWrite(fd);
+			return ;
+		}
+		if (route && route->autoindex)
+		{
+			std::string html = generateAutoIndexPage(fullPath, req.path);
+			Response res;
+			res.status_code = 200;
+			res.status_message = "OK";
+			res.body = html;
+			res.headers["Content-Type"] = "text/html";
+			res.headers["Content-Length"] = to_string(html.length());
+			res.close_connection = true;
+			std::string response = build_http_response(res);
+			m_clientWriteBuffers[fd] = response;
+			setPollToWrite(fd);
+			return;
+		}
+	}
+	/*fall back to index.html if you ask something like localhost:8080/images/ ----> check if index.html exists, if so serve it*/
 
+	std::cout << "[DEBUG] effectiveIndex: " << effectiveIndex << std::endl;
 	std::string response;
 
 	if (!isPathSafe(effectiveRoot, fullPath)) {
