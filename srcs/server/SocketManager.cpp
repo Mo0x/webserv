@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/23 18:23:04 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/24 19:49:40 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -218,9 +218,9 @@ void SocketManager::handleClientRead(int fd)
 	std::string fullPath = effectiveRoot + strippedPath;
 	std::cout << "[DEBUG] fullPath: " << fullPath << std::endl;
 	
-	/*TRAILLING SLASH handling*/
 	if (dirExists(fullPath))
 	{
+		/*TRAILLING SLASH handling*/
 		if (!req.path.empty() && req.path[req.path.length() - 1] != '/')
 		{
 			Response res;
@@ -250,6 +250,21 @@ void SocketManager::handleClientRead(int fd)
 			m_clientWriteBuffers[fd] = response;
 			setPollToWrite(fd);
 			return ;
+		}
+		if (route && route->autoindex)
+		{
+			std::string html = generateAutoIndexPage(fullPath, req.path);
+			Response res;
+			res.status_code = 200;
+			res.status_message = "OK";
+			res.body = html;
+			res.headers["Content-Type"] = "text/html";
+			res.headers["Content-Length"] = to_string(html.length());
+			res.close_connection = true;
+			std::string response = build_http_response(res);
+			m_clientWriteBuffers[fd] = response;
+			setPollToWrite(fd);
+			return;
 		}
 	}
 	/*fall back to index.html if you ask something like localhost:8080/images/ ----> check if index.html exists, if so serve it*/

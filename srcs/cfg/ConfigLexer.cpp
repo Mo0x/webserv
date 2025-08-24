@@ -41,7 +41,7 @@ void ConfigLexer::lex()
             continue;
         }
         if (c == '#') {
-        // skip to the end of the line
+        // skip to the end of the line <<<---- we can comment cfg now
             while (_current < _source.length() && _source[_current] != '\n')
                 _current++;
             continue;

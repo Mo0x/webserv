@@ -1,5 +1,6 @@
 #include "utils.hpp"
 #include <sstream>
+#include <dirent.h>
 
 std::string to_string(size_t val)
 {
@@ -43,4 +44,30 @@ const RouteConfig* findMatchingLocation(const ServerConfig& server, const std::s
 		}
 	}
 	return bestMatch;
+}
+
+/* THIS WORKS ON UNIX BUT NOT MAC BECAUSE IN THAT CASE d_type is alway UNKNOWN*/
+std::string generateAutoIndexPage(const std::string &dirPath, const std::string &uriPath)
+{
+	std::ostringstream html;
+	html << "<html><head><title> Index of " << uriPath << "</title></head><body>";
+	html << "<h1>Index of " << uriPath << "</h1><ul>";
+	DIR *dir = opendir(dirPath.c_str());
+	if (!dir)
+		return "<h1>403 Forbidden</h1>";
+	
+	struct dirent* entry;
+	while((entry = readdir(dir)) != NULL)
+	{
+		std::string name = entry->d_name;
+		if (name == "." || name == "..") // <---- My choice to forbid ".." normally not a problem because path validation is clean but could lead to problem with weird dirs/config I.E directory traversing to a "admin directory"
+			continue ;
+		html << "<li> <a href=\"" << uriPath;
+		if (uriPath[uriPath.size() - 1] != '/') 
+			html << "/";
+		html << name << "\">" << name << "</a> </li";
+	}
+	closedir(dir);
+	html << "</ul></body></html>";
+	return html.str();
 }
