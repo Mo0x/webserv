@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/24 19:49:40 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/26 20:19:15 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <fcntl.h> 
 #include <sstream> // for std::ostringstream
+#include <cstdlib>
 
 /*
 	1. getaddrinfo();
@@ -149,6 +150,9 @@ void SocketManager::handleNewConnection(int listen_fd)
 	m_pollfds.push_back(pdf);
 
 	m_clientBuffers[client_fd] = "";
+	m_headersDone[client_fd] = false;
+	m_expectedContentLen[client_fd] = 0;
+	m_allowedMaxBody[client_fd] = 0;
 	for (size_t i = 0; i < m_servers.size(); ++i)
 	{
 		if (m_servers[i]->getFd() == listen_fd)
@@ -182,12 +186,103 @@ void SocketManager::handleClientRead(int fd)
 	}
 	m_clientBuffers[fd].append(buffer, bytes);
 
-	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
-		return;
+	// max_body_size implementation 
 
-	Request req = parseRequest(m_clientBuffers[fd]);
+	size_t hdrEnd = m_clientBuffers[fd].find("\r\n\r\n");;
+	if (hdrEnd == std::string::npos)
+		return ;
+
+	if (!m_headersDone[fd])
+	{
+		m_headersDone[fd] = true;
+
+		Request req = parseRequest(m_clientBuffers[fd]);
+		const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
+		const RouteConfig* route = findMatchingLocation(server, req.path);
+		
+		size_t allowed = 0;
+		if (route && route->max_body_size > 0)
+			allowed = route->max_body_size;
+		else if (server.client_max_body_size > 0)
+			allowed = server.client_max_body_size;
+		
+		m_allowedMaxBody[fd] = allowed;
+
+		//Extract content length if its here
+		size_t contentLen = 0;
+		std::map<std::string, std::string>::const_iterator itCL = req.headers.find("Content-Length");
+		if (itCL != req.headers.end())
+		{
+			contentLen = static_cast<size_t>(strtoul(itCL->second.c_str(), NULL, 10)); //strtoul == string to unsigned long
+			m_expectedContentLen[fd] = contentLen;
+			//Here early reject if contentLength > limit
+			if (allowed > 0 && contentLen > allowed)
+			{
+				std::string response = buildErrorResponse(413, server);
+				m_clientWriteBuffers[fd] = response;
+				setPollToWrite(fd);
+				return ;
+			}
+
+		}
+		else
+		{
+			m_expectedContentLen[fd] = 0;
+		}
+		// If method expects a body (post/put) but no CL and nor chunker ---> 411 length requiered
+		if ((req.method == "POST") || req.method == "PUT")
+		{
+			bool isChunked = false;
+			std::map<std::string, std::string>::const_iterator itTE = req.headers.find("Transfer-Encoding");
+			if (itTE != req.headers.end())
+			{
+				// basic check, full check woud handle comma/params
+				std::string te = itTE->second;
+				for (size_t i = 0; i < te.size(); ++i)
+					te[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(te[i])));
+				isChunked = (te.find("chunked") != std::string::npos);
+			}
+			if (!isChunked && itCL == req.headers.end())
+			{
+				Response res;
+				res.status_code = 411;
+				res.status_message = "Length Required";
+				res.close_connection = true;
+				res.headers["Content-Type"] = "text/html";
+				res.body = "<h1> 411 Length Required</h1>";
+				res.headers["Content-Length"] = to_string(res.body.length());
+				m_clientWriteBuffers[fd] = build_http_response(res);
+				setPollToWrite(fd);
+				return ;
+			}
+
+		}
+	}
+
+	size_t hdrEndNow = m_clientBuffers[fd].find("\r\n\r\n");
+	size_t bodyStart = (hdrEndNow == std::string::npos) ? 0 : hdrEndNow + 4;
+	size_t bodyBytes = (m_clientBuffers[fd].size() > bodyStart) ? (m_clientBuffers[fd].size() - bodyStart) : 0;
+
+	size_t allowed = m_allowedMaxBody[fd];
+	if (allowed > 0 && bodyBytes > allowed)
+	{
+		const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+		std::string response = buildErrorResponse(413, server);
+		m_clientWriteBuffers[fd] = response;
+		setPollToWrite(fd);
+		return ;
+	}
+	// if Content-length is known, wait until we have the full body
+	if (m_expectedContentLen[fd] > 0 && bodyBytes < m_expectedContentLen[fd])
+	{
+		//keep reading;
+		return;
+	}
+
+	/* HERE WE NEED TO HANDLE CHUNKED IF TRANSFER ENCODING == chunked*/
+	Request req = parseRequest(m_clientBuffers[fd]);  // re-parse now that body is ready
 	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
-	const RouteConfig* route = findMatchingLocation(server, req.path);
+	const RouteConfig* route   = findMatchingLocation(server, req.path);
 
 	std::string effectiveRoot = (route && !route->root.empty()) ? route->root : server.root;
 	std::string effectiveIndex = (route && !route->index.empty()) ? route->index : server.index;

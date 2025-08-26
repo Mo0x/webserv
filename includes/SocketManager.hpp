@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/18 18:02:31 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/26 18:18:14 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -35,6 +35,11 @@ class SocketManager
 	Config	m_config;
 
 	std::map<int, size_t> m_clientToServerIndex;
+
+	//for max body size:
+	std::map<int, bool>		m_headersDone;
+	std::map<int, size_t>	m_expectedContentLen;
+	std::map<int, size_t>	m_allowedMaxBody;
 
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
