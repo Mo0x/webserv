@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/29 20:30:14 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/29 20:44:02 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -606,7 +606,7 @@ std::string SocketManager::buildErrorResponse(int code, const ServerConfig &serv
 	Response res;
 	res.status_code = code;
 	res.close_connection = true;
-	res.headers["Content-Type"] = "text/html";
+	res.headers["Content-Type"] = "text/html; charset=utf-8";
 
 	std::map<int, std::string>::const_iterator it = server.error_pages.find(code);
 	if (it != server.error_pages.end())
@@ -615,7 +615,11 @@ std::string SocketManager::buildErrorResponse(int code, const ServerConfig &serv
 		if (!relativePath.empty() && relativePath[0] == '/')
 			relativePath = relativePath.substr(1);
 
-		std::string fullPath = server.root + "/" + relativePath;
+		std::string fullPath = server.root;
+			if (!fullPath.empty() && fullPath[fullPath.size()-1] == '/')
+				fullPath.erase(fullPath.size()-1);
+		fullPath += "/" + relativePath;
+
 		std::cout << "[DEBUG] server.root = " << server.root << std::endl;
 		std::cout << "[DEBUG] Looking for custom error page: " << fullPath << std::endl;
 
