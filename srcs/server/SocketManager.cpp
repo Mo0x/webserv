@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/26 20:19:15 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/29 20:30:14 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -153,6 +153,7 @@ void SocketManager::handleNewConnection(int listen_fd)
 	m_headersDone[client_fd] = false;
 	m_expectedContentLen[client_fd] = 0;
 	m_allowedMaxBody[client_fd] = 0;
+	m_isChunked[client_fd] = false;
 	for (size_t i = 0; i < m_servers.size(); ++i)
 	{
 		if (m_servers[i]->getFd() == listen_fd)
@@ -185,18 +186,55 @@ void SocketManager::handleClientRead(int fd)
 		return;
 	}
 	m_clientBuffers[fd].append(buffer, bytes);
+	std::cerr << "[FD " << fd << "] recv=" << bytes
+          << " bufsize=" << m_clientBuffers[fd].size() << "\n"; //debug to delete
+	// DEBUG: after recv
+    std::cerr << "[FD " << fd << "] recv=" << bytes
+              << " bufsize=" << m_clientBuffers[fd].size() << "\n";
+
+	// Cap header size before we even find the end of headers	
+	const size_t HEADER_CAP = 32 * 1024; // 32kb
 
 	// max_body_size implementation 
-
+	// case : headers not finished yet -> enforce cap
 	size_t hdrEnd = m_clientBuffers[fd].find("\r\n\r\n");;
 	if (hdrEnd == std::string::npos)
+	{
+		if (m_clientBuffers[fd].size() > HEADER_CAP)
+		{
+			const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+			std::string response = buildErrorResponse(431, server);
+			m_clientWriteBuffers[fd] = response;
+			setPollToWrite(fd);
+			std::cerr << "[FD " << fd << "] -> RESP 431 header_cap (no HDR yet)\n";
+			return; 
+		}
 		return ;
+	}
+
+	// case :headers are finished -> enforce cap on header block
+	if (hdrEnd + 4 > HEADER_CAP)
+	{
+		const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+		std::string response = buildErrorResponse(431, server);
+		m_clientWriteBuffers[fd] = response;
+		setPollToWrite(fd);
+		std::cerr << "[FD " << fd << "] -> RESP 431 header_cap (HDR block too big)\n";
+		return ;
+	}
+	// DEBUG: header boundary
+    std::cerr << "[FD " << fd << "] hdrEnd=" << (int)hdrEnd
+              << " headerBlockLen=" << (int)(hdrEnd+4) << "\n";
 
 	if (!m_headersDone[fd])
 	{
 		m_headersDone[fd] = true;
 
 		Request req = parseRequest(m_clientBuffers[fd]);
+
+		 std::cerr << "[FD " << fd << "] headersDone method=" << req.method
+                  << " path=" << req.path << "\n";
+		  
 		const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
 		const RouteConfig* route = findMatchingLocation(server, req.path);
 		
@@ -207,13 +245,30 @@ void SocketManager::handleClientRead(int fd)
 			allowed = server.client_max_body_size;
 		
 		m_allowedMaxBody[fd] = allowed;
+		// DEBUG: resolved body limit
+        std::cerr << "[FD " << fd << "] allowedMaxBody=" << m_allowedMaxBody[fd] << "\n";
+
 
 		//Extract content length if its here
-		size_t contentLen = 0;
 		std::map<std::string, std::string>::const_iterator itCL = req.headers.find("Content-Length");
+		std::map<std::string, std::string>::const_iterator itTE = req.headers.find("Transfer-Encoding");
+        // DEBUG: show CL/TE early
+        std::cerr << "[FD " << fd << "] CL=" << (itCL == req.headers.end() ? "<none>" : itCL->second)
+                  << " TE=" << (itTE == req.headers.end() ? "<none>" : itTE->second) << "\n";
 		if (itCL != req.headers.end())
 		{
-			contentLen = static_cast<size_t>(strtoul(itCL->second.c_str(), NULL, 10)); //strtoul == string to unsigned long
+			//Safe Guard against malformed content-length (ie NaN, overflow etc...)
+			bool allDigits = !itCL->second.empty() && itCL->second.find_first_not_of("0123456789") == std::string::npos;
+			if (!allDigits)
+			{
+				std::string response = buildErrorResponse(400, server); //bad request
+				m_clientWriteBuffers[fd] = response;
+				setPollToWrite(fd);
+				std::cerr << "[FD " << fd << "] -> RESP 400 malformed Content-Length\n";
+				return ;
+			}
+			unsigned long cl_ul = strtoul(itCL->second.c_str(), NULL, 10);
+			size_t contentLen = static_cast<size_t>(cl_ul);
 			m_expectedContentLen[fd] = contentLen;
 			//Here early reject if contentLength > limit
 			if (allowed > 0 && contentLen > allowed)
@@ -221,6 +276,7 @@ void SocketManager::handleClientRead(int fd)
 				std::string response = buildErrorResponse(413, server);
 				m_clientWriteBuffers[fd] = response;
 				setPollToWrite(fd);
+				std::cerr << "[FD " << fd << "] -> RESP 413 early (CL > allowed)\n";
 				return ;
 			}
 
@@ -239,9 +295,11 @@ void SocketManager::handleClientRead(int fd)
 				// basic check, full check woud handle comma/params
 				std::string te = itTE->second;
 				for (size_t i = 0; i < te.size(); ++i)
-					te[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(te[i])));
+				te[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(te[i])));
 				isChunked = (te.find("chunked") != std::string::npos);
 			}
+			m_isChunked[fd] = isChunked;
+			std::cerr << "[FD " << fd << "] TE chunked?" << (isChunked ? "yes" : "no") << "\n";
 			if (!isChunked && itCL == req.headers.end())
 			{
 				Response res;
@@ -253,15 +311,21 @@ void SocketManager::handleClientRead(int fd)
 				res.headers["Content-Length"] = to_string(res.body.length());
 				m_clientWriteBuffers[fd] = build_http_response(res);
 				setPollToWrite(fd);
+				std::cerr << "[FD " << fd << "] -> RESP 411 no_length (POST/PUT w/o CL/TE)\n";
 				return ;
 			}
 
 		}
 	}
+	/* enforce streaming cap so no CL, chunked or lying clients (ie said body is 20 but is > 20)*/
 
 	size_t hdrEndNow = m_clientBuffers[fd].find("\r\n\r\n");
 	size_t bodyStart = (hdrEndNow == std::string::npos) ? 0 : hdrEndNow + 4;
 	size_t bodyBytes = (m_clientBuffers[fd].size() > bodyStart) ? (m_clientBuffers[fd].size() - bodyStart) : 0;
+	// DEBUG: body counters
+    std::cerr << "[FD " << fd << "] bodyStart=" << bodyStart
+              << " bodyBytes=" << bodyBytes << "\n";
+ 
 
 	size_t allowed = m_allowedMaxBody[fd];
 	if (allowed > 0 && bodyBytes > allowed)
@@ -270,16 +334,47 @@ void SocketManager::handleClientRead(int fd)
 		std::string response = buildErrorResponse(413, server);
 		m_clientWriteBuffers[fd] = response;
 		setPollToWrite(fd);
+		std::cerr << "[FD " << fd << "] -> RESP 413 streaming (body > allowed)\n";
 		return ;
 	}
+	 // OPTIONAL but recommended: client sent more than declared CL → malformed
+    if (m_expectedContentLen[fd] > 0 && bodyBytes > m_expectedContentLen[fd]) {
+        const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+        std::string response = buildErrorResponse(400, server);
+        m_clientWriteBuffers[fd] = response;
+        setPollToWrite(fd);
+        std::cerr << "[FD " << fd << "] -> RESP 400 body_overrun (body > CL)\n";
+        return;
+    }
 	// if Content-length is known, wait until we have the full body
 	if (m_expectedContentLen[fd] > 0 && bodyBytes < m_expectedContentLen[fd])
 	{
 		//keep reading;
+		std::cerr << "[FD " << fd << "] waiting body... (" << bodyBytes << "/" << m_expectedContentLen[fd] << ")\n";
 		return;
 	}
 
-	/* HERE WE NEED TO HANDLE CHUNKED IF TRANSFER ENCODING == chunked*/
+	if (m_isChunked[fd])
+	{
+		 // We don't unchunk yet (Dev B will), but we must not proceed
+		// until the chunked body is complete OR we hit the streaming cap.
+		// Simple completion check: look for the terminating chunk sequence.
+		// NOTE: this ignores optional trailers, which is fine for now.
+		size_t endMarkerPos = std::string::npos;
+		if (m_clientBuffers[fd].size() >= bodyStart + 5)
+		{
+			// search for "\r\n0\r\n\r\n" from the body start
+			endMarkerPos = m_clientBuffers[fd].find("\r\n0\r\n\r\n", bodyStart);
+		}
+		if (endMarkerPos == std::string::npos)
+		{
+			// Not done receiving chunked body yet ->>>> keep reading
+			std::cerr << "[FD " << fd << "] waiting chunked body… bodyBytes=" << bodyBytes << "\n";
+			return ;
+		}
+		std::cerr << "[FD " << fd << "] chunked body complete (terminator found)\n";
+	}
+
 	Request req = parseRequest(m_clientBuffers[fd]);  // re-parse now that body is ready
 	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
 	const RouteConfig* route   = findMatchingLocation(server, req.path);
@@ -344,6 +439,7 @@ void SocketManager::handleClientRead(int fd)
 			std::string response = build_http_response(res);
 			m_clientWriteBuffers[fd] = response;
 			setPollToWrite(fd);
+			std::cerr << "[FD " << fd << "] -> RESP 200 index\n";
 			return ;
 		}
 		if (route && route->autoindex)
@@ -369,9 +465,11 @@ void SocketManager::handleClientRead(int fd)
 
 	if (!isPathSafe(effectiveRoot, fullPath)) {
 		response = buildErrorResponse(403, server);
+		std::cerr << "[FD " << fd << "] -> RESP 403 unsafe_path\n";
 	}
 	else if (!fileExists(fullPath)) {
 		response = buildErrorResponse(404, server);
+		std::cerr << "[FD " << fd << "] -> RESP 404 not_found\n";
 	}
 	else {
 		std::string body = readFile(fullPath);
@@ -383,6 +481,7 @@ void SocketManager::handleClientRead(int fd)
 		res.headers["Content-Length"] = to_string(body.length());
 		res.close_connection = true;
 		response = build_http_response(res);
+		std::cerr << "[FD " << fd << "] -> RESP 200 file\n";
 	}
 
 	m_clientWriteBuffers[fd] = response;
@@ -481,17 +580,24 @@ void SocketManager::handleClientDisconnect(int fd)
 			break ; 
 		}
 	}
+	m_headersDone.erase(fd);
+	m_expectedContentLen.erase(fd);
+	m_allowedMaxBody.erase(fd);
+	m_isChunked.erase(fd);
 }
 
 static std::string getStatusMessage(int code)
 {
 	switch (code)
 	{
-	case 403: return "Forbidden";
-	case 404: return "Not Found";
-	case 413: return "Payload Too Large";
-	case 500: return "Internal Server Error";
-	default:  return "Error";
+		case 400: return "Bad Request";
+		case 403: return "Forbidden";
+		case 404: return "Not Found";
+		case 411: return "Length Required";
+		case 413: return "Payload Too Large";
+		case 431: return "Request Header Fields Too Large";
+		case 500: return "Internal Server Error";
+		default:  return "Error";
 	}
 }
 

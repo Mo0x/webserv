@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/26 18:18:14 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/29 20:17:27 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,11 +43,12 @@ class SocketManager
 
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
-
+	std::map<int, bool> m_isChunked;
+	
 	public:
 	SocketManager(const Config &config);
-	~SocketManager();
 	SocketManager();
+	~SocketManager();
 
 	void addServer(const std::string& host, unsigned short port);
 	void initPoll();
