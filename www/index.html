@@ -1,1 +1,273 @@
-<h1>Root Index</h1>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>webserv – Test Console</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; }
+    body { margin: 0; background: #0b0f14; color: #e6edf3; }
+    header { padding: 24px; border-bottom: 1px solid #1f2630; position: sticky; top: 0; background: #0b0f14; z-index: 10; }
+    h1 { margin: 0 0 4px 0; font-size: 22px; }
+    h2 { font-size: 16px; margin: 20px 0 8px; }
+    p, li, label, input, button, select, textarea { font-size: 14px; }
+    a { color: #8ab4f8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    section, .card { background: #0f1520; border: 1px solid #1f2630; border-radius: 12px; padding: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    input[type="text"], input[type="number"], select, textarea { width: 100%; background: #0b0f14; border: 1px solid #2b3543; color: #e6edf3; border-radius: 8px; padding: 8px 10px; }
+    textarea { min-height: 90px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .muted { color: #9aa6b2; }
+    .btn { background: #2d7cff; border: 1px solid #2d7cff; color: white; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+    .btn.secondary { background: transparent; border-color: #2b3543; }
+    .btn.danger { background: #d64545; border-color: #d64545; }
+    code, pre { background: #0b0f14; border: 1px solid #2b3543; border-radius: 8px; padding: 8px; color: #e6edf3; }
+    pre { overflow: auto; max-height: 260px; }
+    .resp { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .pill { display: inline-block; border: 1px solid #2b3543; background: #0b0f14; padding: 4px 8px; border-radius: 999px; margin: 2px 6px 2px 0; }
+    .danger-text { color: #ff9da4; }
+    footer { padding: 24px; color: #9aa6b2; }
+    ul { margin: 8px 0 0 16px; }
+    .small { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>webserv – Test Console</h1>
+    <div class="muted">Click ready-made tests or craft your own requests. Everything stays in the browser and targets this server.</div>
+  </header>
+
+  <main>
+    <!-- QUICK TESTS -->
+    <section>
+      <h2>Quick tests</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>GET basics</h3>
+          <ul>
+            <li><a href="/" target="_blank">GET / (index)</a></li>
+            <li><a href="/images/" target="_blank">GET /images/ (static dir)</a></li>
+            <li><a href="/does-not-exist-404" target="_blank">GET /does-not-exist-404 (expect 404)</a></li>
+            <li><a href="/%2e%2e/" target="_blank">GET /%2e%2e/ (encoded ..)</a> <span class="pill small">expect 403</span></li>
+            <li><a href="/a/../" target="_blank">GET /a/../ (path traversal)</a> <span class="pill small">expect 403</span></li>
+          </ul>
+          <p class="small muted">Tip: If your browser rewrites <code>%2e%2e</code>, check the server logs and compare with <code>curl</code>.</p>
+        </div>
+
+        <div class="card">
+          <h3>Uploads &amp; limits</h3>
+          <ul>
+            <li><a href="#post-form">POST form (x-www-form-urlencoded)</a></li>
+            <li><a href="#post-multipart">POST file (multipart/form-data)</a></li>
+            <li><a href="#custom-req">Custom request (set Content-Length)</a></li>
+          </ul>
+          <p class="small muted">Use the multipart tester below to probe <code>client_max_body_size</code> (expect 413 on oversized bodies).</p>
+        </div>
+
+        <div class="card">
+          <h3>CGI (if enabled)</h3>
+          <ul>
+            <li><a href="/cgi-bin/hello.py" target="_blank">GET /cgi-bin/hello.py</a></li>
+            <li><a href="/cgi-bin/env.py?foo=bar" target="_blank">GET /cgi-bin/env.py?foo=bar</a></li>
+            <li><a href="#post-form" >POST to CGI via form</a></li>
+          </ul>
+          <p class="small muted">Adjust paths to your actual CGI mount.</p>
+        </div>
+
+        <div class="card">
+          <h3 class="danger-text">Danger zone</h3>
+          <ul>
+            <li><a href="#delete-tool" class="danger-text">DELETE tester (restricted to <code>/uploads/</code>)</a></li>
+          </ul>
+          <p class="small muted danger-text">Only use inside a dedicated sandbox directory like <code>/uploads/</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FORM: URLENCODED -->
+    <section id="post-form">
+      <h2>POST – application/x-www-form-urlencoded</h2>
+      <div class="grid-2">
+        <div>
+          <div class="row">
+            <label for="pf-url" style="min-width:80px;">URL</label>
+            <input id="pf-url" type="text" value="/echo" />
+          </div>
+          <div class="row">
+            <label for="pf-kv" style="min-width:80px;">Data</label>
+            <input id="pf-kv" type="text" placeholder="key1=value1&key2=value2" value="hello=webserv&lang=cpp98" />
+          </div>
+          <div class="row">
+            <button class="btn" onclick="sendForm()">Send POST</button>
+            <button class="btn secondary" onclick="clearResp('pf')">Clear</button>
+          </div>
+        </div>
+        <div class="resp">
+          <pre id="pf-status">—</pre>
+          <pre id="pf-headers">—</pre>
+          <pre id="pf-body">—</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- FORM: MULTIPART -->
+    <section id="post-multipart">
+      <h2>POST – multipart/form-data (file upload)</h2>
+      <div class="grid-2">
+        <div>
+          <div class="row">
+            <label for="mp-url" style="min-width:80px;">URL</label>
+            <input id="mp-url" type="text" value="/upload" />
+          </div>
+          <div class="row">
+            <input id="mp-file" type="file" />
+          </div>
+          <div class="row">
+            <label for="mp-field" style="min-width:80px;">Field</label>
+            <input id="mp-field" type="text" value="file" />
+          </div>
+          <div class="row">
+            <button class="btn" onclick="sendMultipart()">Send POST</button>
+            <button class="btn secondary" onclick="clearResp('mp')">Clear</button>
+          </div>
+          <p class="small muted">Try a file larger than your configured <code>client_max_body_size</code> to trigger <code>413</code>.</p>
+        </div>
+        <div class="resp">
+          <pre id="mp-status">—</pre>
+          <pre id="mp-headers">—</pre>
+          <pre id="mp-body">—</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- CUSTOM REQUEST -->
+    <section id="custom-req">
+      <h2>Custom request (any method)</h2>
+      <div class="grid-2">
+        <div>
+          <div class="row">
+            <label for="cr-method" style="min-width:80px;">Method</label>
+            <select id="cr-method">
+              <option>GET</option>
+              <option>POST</option>
+              <option>DELETE</option>
+              <option>PUT</option>
+              <option>HEAD</option>
+            </select>
+            <input id="cr-url" type="text" value="/echo" placeholder="/path" />
+          </div>
+          <div class="row">
+            <label for="cr-ctype" style="min-width:80px;">Content-Type</label>
+            <input id="cr-ctype" type="text" value="text/plain" />
+          </div>
+          <div class="row">
+            <label for="cr-body" style="min-width:80px;">Body</label>
+            <textarea id="cr-body" placeholder="Optional body"></textarea>
+          </div>
+          <div class="row">
+            <button class="btn" onclick="sendCustom()">Send</button>
+            <button class="btn secondary" onclick="clearResp('cr')">Clear</button>
+          </div>
+          <p class="small muted">For <code>HEAD</code>, the body is ignored. For <code>DELETE</code>, point to a file under <code>/uploads/</code>.</p>
+        </div>
+        <div class="resp">
+          <pre id="cr-status">—</pre>
+          <pre id="cr-headers">—</pre>
+          <pre id="cr-body">—</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- DELETE helper -->
+    <section id="delete-tool">
+      <h2>DELETE helper (safe guard)</h2>
+      <div class="grid-2">
+        <div>
+          <div class="row">
+            <label for="del-url" style="min-width:80px;">URL</label>
+            <input id="del-url" type="text" value="/uploads/sample.txt" />
+          </div>
+          <div class="row">
+            <button class="btn danger" onclick="sendDelete()">DELETE</button>
+          </div>
+          <p class="small muted danger-text">This tool blocks paths not under <code>/uploads/</code> to prevent accidents.</p>
+        </div>
+        <div class="resp">
+          <pre id="del-status">—</pre>
+          <pre id="del-headers">—</pre>
+          <pre id="del-body">—</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="small">
+    Built for the 42 <em>webserv</em> project. This page uses <code>fetch()</code> to display status, headers and body returned by your server.
+  </footer>
+
+  <script>
+    function show(resp, prefix) {
+      document.getElementById(prefix+'-status').textContent = resp.status + ' ' + resp.statusText;
+      let hs = '';
+      resp.headers.forEach((v,k)=>{ hs += k + ': ' + v + '\\n'; });
+      document.getElementById(prefix+'-headers').textContent = hs || '—';
+    }
+    function showBody(text, prefix) {
+      document.getElementById(prefix+'-body').textContent = text || '—';
+    }
+    function clearResp(prefix) {
+      ['status','headers','body'].forEach(s=>document.getElementById(prefix+'-'+s).textContent='—');
+    }
+    function normUrl(u){ try { return new URL(u, window.location.origin).toString(); } catch(e){ return u; } }
+
+    async function sendForm() {
+      const url = document.getElementById('pf-url').value || '/';
+      const data = document.getElementById('pf-kv').value || '';
+      const body = new URLSearchParams(data);
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        show(r, 'pf'); const t = await r.text(); showBody(t, 'pf');
+      } catch (e) { showBody(String(e), 'pf'); }
+    }
+
+    async function sendMultipart() {
+      const url = document.getElementById('mp-url').value || '/upload';
+      const field = document.getElementById('mp-field').value || 'file';
+      const fileInput = document.getElementById('mp-file');
+      const fd = new FormData();
+      if (fileInput.files.length) fd.append(field, fileInput.files[0]);
+      try {
+        const r = await fetch(url, { method: 'POST', body: fd });
+        show(r, 'mp'); const t = await r.text(); showBody(t, 'mp');
+      } catch (e) { showBody(String(e), 'mp'); }
+    }
+
+    async function sendCustom() {
+      const method = document.getElementById('cr-method').value;
+      const url = document.getElementById('cr-url').value || '/';
+      const ctype = document.getElementById('cr-ctype').value.trim();
+      const body = document.getElementById('cr-body').value;
+      const headers = {};
+      if (ctype) headers['Content-Type'] = ctype;
+      try {
+        const r = await fetch(url, { method, headers, body: ['GET','HEAD'].includes(method) ? undefined : body });
+        show(r, 'cr'); const t = await r.text(); showBody(t, 'cr');
+      } catch (e) { showBody(String(e), 'cr'); }
+    }
+
+    async function sendDelete() {
+      const url = document.getElementById('del-url').value || '/uploads/sample.txt';
+      if (!url.startsWith('/uploads/')) {
+        alert('Blocked: only /uploads/* allowed here.');
+        return;
+      }
+      try {
+        const r = await fetch(url, { method: 'DELETE' });
+        show(r, 'del'); const t = await r.text(); showBody(t, 'del');
+      } catch (e) { showBody(String(e), 'del'); }
+    }
+  </script>
+</body>
+</html>
