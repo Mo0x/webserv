@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/29 20:44:02 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/08/30 18:58:10 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -424,7 +424,10 @@ void SocketManager::handleClientRead(int fd)
 			setPollToWrite(fd);
 			return ;
 		}
-		std::string indexCandidate = fullPath + "/" + effectiveIndex;
+		std::string indexCandidate = fullPath;
+		if (!indexCandidate.empty() && indexCandidate[indexCandidate.size() - 1] != '/')
+			indexCandidate += '/';
+		indexCandidate += effectiveIndex; 
 		std::cout << "[DEBUG] Trying index candidate: " << indexCandidate << std::endl;
 		if (fileExists(indexCandidate))
 		{
