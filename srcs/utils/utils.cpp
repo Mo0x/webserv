@@ -71,3 +71,39 @@ std::string generateAutoIndexPage(const std::string &dirPath, const std::string 
 	html << "</ul></body></html>";
 	return html.str();
 }
+
+std::string toUpperCopy(const std::string &str)
+{
+	std::string ret(str);
+	for (size_t i =0; i < ret.size(); ++i)
+		ret[i] = static_cast<char>(std::toupper(ret[i]));
+	return ret;
+}
+
+// if GET is allowed, we must allow the HEAD method too : they share the same semantics; HEAD just omits the body
+std::set<std::string> normalizeAllowedForAllowHeader(const std::set<std::string> &conf)
+{
+	std::set<std::string> out = conf;
+	if (out.find("GET") != out.end())
+		out.insert("HEAD");
+	return out;
+}
+
+std::string joinAllowedMethods(const std::set<std::string> &methods)
+{
+	std::string out;
+	for (std::set<std::string>::const_iterator it = methods.begin(); it != methods.end(); it++)
+	{
+		if (!out.empty())
+			out += ", ";
+		out += *it;
+	}
+	return out;
+}
+
+bool isMethodAllowedForRoute(const std::string &methodUpper, const std::set<std::string> &allowed)
+{
+	if (methodUpper == "HEAD")
+		return (allowed.find("GET") != allowed.end());
+	return (allowed.find(methodUpper) != allowed.end());
+}
