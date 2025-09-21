@@ -72,12 +72,12 @@ std::string generateAutoIndexPage(const std::string &dirPath, const std::string 
 	return html.str();
 }
 
-std::string toUpperCopy(const std::string &str)
+std::string toUpperCopy(const std::string& str)
 {
-	std::string ret(str);
-	for (size_t i =0; i < ret.size(); ++i)
-		ret[i] = static_cast<char>(std::toupper(ret[i]));
-	return ret;
+    std::string ret(str);
+    for (size_t i = 0; i < ret.size(); ++i)
+        ret[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(ret[i])));
+    return ret;
 }
 
 // if GET is allowed, we must allow the HEAD method too : they share the same semantics; HEAD just omits the body

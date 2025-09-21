@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/30 18:58:10 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/09/21 17:11:41 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -248,6 +248,29 @@ void SocketManager::handleClientRead(int fd)
 		// DEBUG: resolved body limit
         std::cerr << "[FD " << fd << "] allowedMaxBody=" << m_allowedMaxBody[fd] << "\n";
 
+		// Normalize method once (uppercased) for allowed method 405
+		const std::string methodUpper = toUpperCopy(req.method);
+
+		if (route && !route->allowed_methods.empty() &&
+			!isMethodAllowedForRoute(methodUpper, route->allowed_methods))
+		{
+			std::set<std::string> allowSet = normalizeAllowedForAllowHeader(route->allowed_methods);
+			std::string allowHeader = joinAllowedMethods(allowSet);
+
+			Response res;
+			res.status_code = 405;
+			res.status_message = "Method Not Allowed";
+			res.headers["Allow"] = allowHeader;
+			res.headers["Content-Type"] = "text/html; charset=utf-8";
+			res.body = "<h1>405 Method Not Allowed</h1>";
+			res.headers["Content-Length"] = to_string(res.body.length());
+			res.close_connection = true; // keep or drop per your policy
+
+			m_clientWriteBuffers[fd] = build_http_response(res);
+			setPollToWrite(fd);
+			std::cerr << "[FD " << fd << "] -> RESP 405 disallowed_method (pre-body)\n";
+			return;
+		}
 
 		//Extract content length if its here
 		std::map<std::string, std::string>::const_iterator itCL = req.headers.find("Content-Length");
@@ -286,7 +309,7 @@ void SocketManager::handleClientRead(int fd)
 			m_expectedContentLen[fd] = 0;
 		}
 		// If method expects a body (post/put) but no CL and nor chunker ---> 411 length requiered
-		if ((req.method == "POST") || req.method == "PUT")
+		if ((methodUpper == "POST") || (methodUpper == "PUT"))
 		{
 			bool isChunked = false;
 			std::map<std::string, std::string>::const_iterator itTE = req.headers.find("Transfer-Encoding");
@@ -382,21 +405,16 @@ void SocketManager::handleClientRead(int fd)
 	std::string effectiveRoot = (route && !route->root.empty()) ? route->root : server.root;
 	std::string effectiveIndex = (route && !route->index.empty()) ? route->index : server.index;
 
-	// Check if method is allowed
-	if (route && !route->allowed_methods.empty() &&
-		route->allowed_methods.find(req.method) == route->allowed_methods.end())
-	{
-		std::string response = buildErrorResponse(405, server); // Method Not Allowed
-		m_clientWriteBuffers[fd] = response;
-		setPollToWrite(fd);
-		return;
-	}
-
 	// === URI REWRITE ===
 	std::string strippedPath = req.path;
 
 	if (route && strippedPath.find(route->path) == 0)
 		strippedPath = strippedPath.substr(route->path.length());
+
+	if (route) {
+    std::cerr << "[FD " << fd << "] route path=" << route->path
+              << " allowed_methods.size()=" << route->allowed_methods.size() << "\n";
+	}
 
 	std::cout << "[DEBUG] route->path: " << (route ? route->path : "NULL") << std::endl;
 	std::cout << "[DEBUG] strippedPath: " << strippedPath << std::endl;
