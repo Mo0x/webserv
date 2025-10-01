@@ -107,3 +107,60 @@ bool isMethodAllowedForRoute(const std::string &methodUpper, const std::set<std:
 		return (allowed.find("GET") != allowed.end());
 	return (allowed.find(methodUpper) != allowed.end());
 }
+
+bool shouldCloseAfterThisResponse(int status, bool headers_complete, bool body_was_expected, bool body_fully_consumed, bool client_said_close)
+{
+	if (client_said_close)
+		return true;
+	if (!headers_complete)
+		return true;
+	if (status == 400 || status == 408)
+		return true;
+	if (status == 413 && body_was_expected && !body_fully_consumed)
+		return true;
+	if (status == 413 || status == 431)
+		return true ;
+	return false;
+}
+
+bool clientRequestedClose(const Request &req)
+{
+	if (req.http_version != "HTTP/1.1")
+		return true;
+	std::map<std::string, std::string>::const_iterator it = req.headers.find("Connection");
+	if (it == req.headers.end())
+		return false;
+	
+	std::string v = it->second;
+	for (size_t i = 0; i < v.size(); ++i)
+		v[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(v[i])));
+	return v.find("CLOSE") != std::string::npos;
+}
+
+std::string getMimeTypeFromPath(const std::string& path) {
+    // find last dot (.) that comes after the last slash (/)
+    size_t slash = path.find_last_of("/\\");
+    size_t dot   = path.find_last_of('.');
+    if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
+        return "application/octet-stream";
+
+    std::string ext = path.substr(dot + 1);
+    // lowercase the extension safely
+    for (size_t i = 0; i < ext.size(); ++i)
+        ext[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(ext[i])));
+
+    if (ext == "html" || ext == "htm")  return "text/html; charset=utf-8";
+    if (ext == "css")                   return "text/css";
+    if (ext == "js")                    return "application/javascript";
+    if (ext == "json")                  return "application/json";
+    if (ext == "txt" || ext == "log")   return "text/plain; charset=utf-8";
+    if (ext == "svg")                   return "image/svg+xml";
+    if (ext == "png")                   return "image/png";
+    if (ext == "jpg" || ext == "jpeg")  return "image/jpeg";
+    if (ext == "gif")                   return "image/gif";
+    if (ext == "webp")                  return "image/webp";
+    if (ext == "ico")                   return "image/x-icon";
+    if (ext == "pdf")                   return "application/pdf";
+    // fallback
+    return "application/octet-stream";
+}

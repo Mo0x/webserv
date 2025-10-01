@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/08/29 20:17:27 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/01 15:53:39 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -65,6 +65,8 @@ class SocketManager
 	void setPollToWrite(int fd);
 
 	void setServers(const std::vector<ServerConfig> & servers);
+	
+	void finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed);
 };
 
 #endif
