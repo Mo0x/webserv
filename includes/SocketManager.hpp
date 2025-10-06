@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/01 15:53:39 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/03 17:31:54 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -63,6 +63,7 @@ class SocketManager
 	std::string buildErrorResponse(int code, const ServerConfig &server);
 	const ServerConfig& findServerForClient(int fd) const;
 	void setPollToWrite(int fd);
+	void clearPollout(int fd);
 
 	void setServers(const std::vector<ServerConfig> & servers);
 	

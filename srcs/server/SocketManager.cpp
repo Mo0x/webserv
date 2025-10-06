@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/01 17:16:43 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/06 17:45:52 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,6 +24,8 @@
 #include <fcntl.h> 
 #include <sstream> // for std::ostringstream
 #include <cstdlib>
+#include <cerrno>
+#include <cctype>
 
 /*
 	1. getaddrinfo();
@@ -170,7 +172,19 @@ void SocketManager::setPollToWrite(int fd)
 	{
 		if (m_pollfds[i].fd == fd)
 		{
-			m_pollfds[i].events = POLLOUT;
+			m_pollfds[i].events |= POLLOUT;
+			break;
+		}
+	}
+}
+
+void SocketManager::clearPollout(int fd)
+{
+	for (size_t i = 0; i < m_pollfds.size(); ++i)
+	{
+		if (m_pollfds[i].fd == fd)
+		{
+			m_pollfds[i].events &= ~POLLOUT; // remove write interest ONLY operator bitwise AND (&=) and NOT (~) to just remove pollout
 			break;
 		}
 	}
@@ -188,6 +202,81 @@ static Response makeHtmlError(int code, const std::string& reason, const std::st
 	return r;
 }
 
+static int validateBodyFraming(const std::map<std::string, std::string> &headers, size_t &outContentLength, bool &outHasTE)
+{
+	outContentLength = 0;
+	outHasTE = false;
+	size_t clCount = 0;
+	std::string clValue;
+
+	for (std::map<std::string , std::string>::const_iterator it = headers.begin(); it != headers.end(); it++)
+	{
+		const std::string &key = it->first;
+		const std::string &value = it->second;
+		if (key == "content-length")
+		{
+			++clCount;
+			clValue = value;
+		}
+		else if (key == "transfer-encoding")
+		{
+			outHasTE = true;
+		}
+	}
+	if (clCount > 1)
+		return 400;
+	if (clCount == 1 && outHasTE)
+		return 400;
+	// if CL present, verify digits-only and then parse into size_t safely
+	if (clCount == 1)
+	{
+		if (clValue.empty())
+			return 400;
+		for (size_t i = 0; i < clValue.size(); ++i)
+		{
+			const unsigned char ch = static_cast<unsigned char>(clValue[i]);
+			if (ch < '0' || ch > '9')
+				return 400;
+		}
+
+		/* here we parse with a guard against overflow !
+		Let’s say size_t is 64 bits, so its max is 18446744073709551615.
+
+		MAX_DIV10 = the largest integer X such that X * 10 still fits in size_t.
+		→ here it’s 1844674407370955161 (we drop the last digit 5).
+
+		MAX_LAST = the remaining “last safe digit” (the remainder of max ÷ 10)
+		→ here it’s 5.
+
+		EG:
+		Say size_t max = 999.
+
+		Then MAX_DIV10 = 99 and MAX_LAST = 9.
+
+		Now parsing "1000":
+
+		step	val	digit	check
+		'1'		0	1		ok → val=1
+		'0'		1	0		ok → val=10
+		'0'		10	0		ok → val=100
+		'0'		100	0		val(100) > MAX_DIV10(99) → reject 400
+		*/
+		size_t val = 0;
+		const size_t MAX_DIV10 = static_cast<size_t>(-1) / 10;
+		const size_t MAX_LAST = static_cast<size_t>(-1) % 10;
+
+		for (size_t i = 0; i < clValue.size(); ++i)
+		{
+			size_t digit = static_cast<size_t>(clValue[i] - '0'); // classic ascii trick 
+			if (val > MAX_DIV10 || (val == MAX_DIV10 && digit > MAX_LAST))
+				return 400;
+			val = val * 10 + digit;
+		}
+		outContentLength = val;
+	}
+	return 0; // means OK here
+}
+
 void SocketManager::handleClientRead(int fd)
 {
     char buffer[1024];
@@ -203,8 +292,8 @@ void SocketManager::handleClientRead(int fd)
     // ---- Header cap checks (pre-parse) --------------------------------------
     const size_t HEADER_CAP = 32 * 1024;
     size_t hdrEnd = m_clientBuffers[fd].find("\r\n\r\n");
-
-    if (hdrEnd == std::string::npos) {
+    if (hdrEnd == std::string::npos) 
+	{
         if (m_clientBuffers[fd].size() > HEADER_CAP) {
             Response res = makeHtmlError(431, "Request Header Fields Too Large",
                                          "<h1>431 Request Header Fields Too Large</h1>");
@@ -216,6 +305,26 @@ void SocketManager::handleClientRead(int fd)
         }
         return; // keep reading headers
     }
+	// ----- Header line count cap (extra guard) --------------------------------
+
+	const size_t MAX_HEADER_LINES = 100;
+	size_t lines = 0, pos = 0;
+	while (pos < hdrEnd)
+	{
+		size_t nl = m_clientBuffers[fd].find("\r\n", pos);
+		if (nl == std::string::npos || nl > hdrEnd)
+			break ;
+		if (lines > MAX_HEADER_LINES)
+		{
+			Response res = makeHtmlError(431, "Request Header Fields Too Large", "<h1>431 Request Header Fields Too Large</h1>");
+			res.close_connection = true;
+			m_clientWriteBuffers[fd] = build_http_response(res);
+			setPollToWrite(fd);
+			std::cerr << "[FD " << fd << "] -> RESP 431 header_line_count\n";
+			return;
+		}
+		pos = nl + 2;
+	}
 
     if (hdrEnd + 4 > HEADER_CAP) {
         Response res = makeHtmlError(431, "Request Header Fields Too Large",
@@ -229,6 +338,19 @@ void SocketManager::handleClientRead(int fd)
 
     // ---- Parse ONCE (now that headers are complete & within cap) ------------
     Request req = parseRequest(m_clientBuffers[fd]);
+
+	//here do the guard against HTML request smuggling
+	size_t contentLength = 0;
+	bool hasTE = false;
+	int framingErr = validateBodyFraming(req.headers, contentLength, hasTE);
+	if (framingErr != 0)
+	{
+		Response res = makeHtmlError(400, "Bad Request", "<h1>400 Bad Request</h1><p>Invalid Content-Length / Transfer-Encoding</p>");
+		res.close_connection = true;
+		m_clientWriteBuffers[fd] = build_http_response(res);
+		setPollToWrite(fd);
+		return ;
+	}
     const std::string methodUpper = toUpperCopy(req.method);
 
     // ---- First-time header processing (limits, TE/CL, 405/411) --------------
@@ -540,23 +662,40 @@ void SocketManager::handleClientRead(int fd)
 
 void SocketManager::handleClientWrite(int fd)
 {
-	if (m_clientWriteBuffers.find(fd) == m_clientWriteBuffers.end())
-		return ;
-	std::string &buffer = m_clientWriteBuffers[fd];
-	ssize_t sent = send(fd, buffer.c_str(), buffer.size(), 0);
-	if (sent < 0)
+	std::map<int, std::string>::iterator it = m_clientWriteBuffers.find(fd);
+	if (it == m_clientWriteBuffers.end())
+		return;
+	std::string &buffer = it->second;
+	if (buffer.empty())
 	{
-		perror("send() failed");
+		m_clientWriteBuffers.erase(it);
+		handleClientDisconnect(fd);
+		return;
+	}
+
+	const size_t MAX_CHUNK = 16 * 1024;
+	const size_t toSend = buffer.size() < MAX_CHUNK ? buffer.size() : MAX_CHUNK;
+
+	ssize_t n = ::send(fd, buffer.data(), toSend, 0); // ::send <---- because we want to use send the system call and not some SocketManager::sent
+
+	if (n < 0)
+	{
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+		{
+			return ;
+		}
 		handleClientDisconnect(fd);
 		return ;
 	}
 
-	buffer.erase(0,sent);
-	if (buffer.empty())
+	buffer.erase(0, static_cast<size_t>(n));
+	if (!buffer.empty())
 	{
-		m_clientWriteBuffers.erase(fd);
-		handleClientDisconnect(fd);
+		// Still have data; keep POLLOUT set (we already changed setPollToWrite to |=).
+		return ;
 	}
+	m_clientWriteBuffers.erase(it);
+	handleClientDisconnect(fd);
 }
 
 void SocketManager::handleClientDisconnect(int fd)
@@ -642,8 +781,8 @@ const ServerConfig& SocketManager::findServerForClient(int fd) const
 {
 	std::map<int, size_t>::const_iterator it = m_clientToServerIndex.find(fd);
 	if (it == m_clientToServerIndex.end())
-		return m_config.servers[it->second];
-	throw std::runtime_error("No matching server config for client FD");
+		throw std::runtime_error("No matching server config for client FD");
+	return m_config.servers[it->second];
 }
 
 void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed)
