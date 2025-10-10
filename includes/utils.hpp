@@ -15,5 +15,6 @@ bool isMethodAllowedForRoute(const std::string &methodUpper, const std::set<std:
 bool shouldCloseAfterThisResponse(int status, bool headers_complete, bool body_was_expected, bool body_fully_consumed, bool client_said_close);
 bool clientRequestedClose(const Request& req);
 std::string getMimeTypeFromPath(const std::string& path);
+void countHeaderName(const std::string &rawHeaders, std::map<std::string, size_t> &outCounts);
 
 #endif
