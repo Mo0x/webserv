@@ -1,6 +1,7 @@
 #include "utils.hpp"
 #include <sstream>
 #include <dirent.h>
+#include "SocketManager.hpp"
 
 std::string to_string(size_t val)
 {
@@ -169,33 +170,39 @@ std::string getMimeTypeFromPath(const std::string& path)
 // Count how many times each header name appears (case-insensitive)
 // we check each line, lowecase it and had to a map "value(hearder) key(count of header)"
 // so if count > 1 we now there is a problem 
-void countHeaderName(const std::string &rawHeaders, std::map<std::string, size_t> &outCounts)
-{
-	outCounts.clear();
-	size_t pos = 0;
-	while (pos < rawHeaders.size())
-	{
-		size_t nl = rawHeaders.find("\r\n", pos);
-		if (nl == std::string::npos)
-			nl = rawHeaders.size();
-		if (nl == pos)
-			break;
-		const std::string line = rawHeaders.substr(pos, nl - pos);
-		if (line.find(":") != std::string::npos)
-		{
-			size_t colon = line.find(':');
-			std::string name = line.substr(0, colon);
-			while (!name.empty() && (name[name.size() - 1] == ' ' || name[name.size() - 1] == '\t'))
-				name.erase(name.size() - 1);
-			for (size_t i = 0 ; i < name.size() - 1)
-			{
-				unsigned char c = static_cast<unsigned char>(name [i]);
-				if (c >= 'A' && c <= 'Z') 
-					name[i] = static_cast<char>(c - 'A' + 'a');
-			}
-			++outCounts[name];
 
-		}
-		pos = (nl == rawHeaders.size()) ? nl : nl + 2;
-	}
+void countHeaderNames(const std::string &rawHeaders, std::map<std::string, size_t> &outCounts)
+{
+    outCounts.clear();
+    size_t pos = 0;
+    while (pos < rawHeaders.size())
+    {
+        size_t nl = rawHeaders.find("\r\n", pos);
+        if (nl == std::string::npos) nl = rawHeaders.size();
+        if (nl == pos) break; // empty line (defensive)
+
+        const std::string line = rawHeaders.substr(pos, nl - pos);
+
+        // only header lines have ':'
+        size_t colon = line.find(':');
+        if (colon != std::string::npos)
+        {
+            std::string name = line.substr(0, colon);
+
+            // trim trailing spaces/tabs in header-name
+            while (!name.empty() && (name[name.size() - 1] == ' ' || name[name.size() - 1] == '\t'))
+                name.erase(name.size() - 1);
+
+            // lowercase ASCII
+            for (size_t i = 0; i < name.size(); ++i)
+            {
+                unsigned char c = static_cast<unsigned char>(name[i]);
+                if (c >= 'A' && c <= 'Z')
+                    name[i] = static_cast<char>(c - 'A' + 'a');
+            }
+            ++outCounts[name];
+        }
+
+        pos = (nl == rawHeaders.size()) ? nl : nl + 2; 
+    }
 }

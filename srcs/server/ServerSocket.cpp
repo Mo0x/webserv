@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/22 19:33:59 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/10 19:45:49 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -163,3 +163,4 @@ bool ServerSocket::isValid() const
 {
 	return m_fd != -1;
 }
+

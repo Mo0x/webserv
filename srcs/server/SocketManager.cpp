@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/06 17:45:52 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/10 20:04:42 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,6 +37,8 @@
 	7. close() || shutdown() close();
 
 */
+/* helper for safeguard*/
+
 
 SocketManager::SocketManager(const Config &config) :
 	m_config(config)
@@ -277,101 +279,127 @@ static int validateBodyFraming(const std::map<std::string, std::string> &headers
 	return 0; // means OK here
 }
 
+static void queueErrorAndClose(SocketManager &sm, int fd, int status,
+                               const std::string &title,
+                               const std::string &html)
+{
+    Response res = makeHtmlError(status, title, html);
+    res.close_connection = true;     // invalid headers → must close
+    sm.finalizeAndQueue(fd, res);
+    sm.setPollToWrite(fd);
+}
+
 void SocketManager::handleClientRead(int fd)
 {
+    // ---- read from socket ---------------------------------------------------
     char buffer[1024];
-    int bytes = recv(fd, buffer, sizeof(buffer), 0);
-    if (bytes <= 0) {
+    int bytes = ::recv(fd, buffer, sizeof(buffer), 0);
+    if (bytes <= 0)
+    {
         handleClientDisconnect(fd);
         return;
     }
     m_clientBuffers[fd].append(buffer, bytes);
-    std::cerr << "[FD " << fd << "] recv=" << bytes
-              << " bufsize=" << m_clientBuffers[fd].size() << "\n";
 
-    // ---- Header cap checks (pre-parse) --------------------------------------
+    // ---- header byte cap pre-check (before we have full headers) -----------
     const size_t HEADER_CAP = 32 * 1024;
-    size_t hdrEnd = m_clientBuffers[fd].find("\r\n\r\n");
-    if (hdrEnd == std::string::npos) 
-	{
-        if (m_clientBuffers[fd].size() > HEADER_CAP) {
-            Response res = makeHtmlError(431, "Request Header Fields Too Large",
-                                         "<h1>431 Request Header Fields Too Large</h1>");
-            res.close_connection = true; // headers not complete → must close
-            m_clientWriteBuffers[fd] = build_http_response(res);
-            setPollToWrite(fd);
-            std::cerr << "[FD " << fd << "] -> RESP 431 header_cap (no HDR yet)\n";
-            return;
-        }
-        return; // keep reading headers
-    }
-	// ----- Header line count cap (extra guard) --------------------------------
-
-	const size_t MAX_HEADER_LINES = 100;
-	size_t lines = 0, pos = 0;
-	while (pos < hdrEnd)
-	{
-		size_t nl = m_clientBuffers[fd].find("\r\n", pos);
-		if (nl == std::string::npos || nl > hdrEnd)
-			break ;
-		if (lines > MAX_HEADER_LINES)
-		{
-			Response res = makeHtmlError(431, "Request Header Fields Too Large", "<h1>431 Request Header Fields Too Large</h1>");
-			res.close_connection = true;
-			m_clientWriteBuffers[fd] = build_http_response(res);
-			setPollToWrite(fd);
-			std::cerr << "[FD " << fd << "] -> RESP 431 header_line_count\n";
-			return;
-		}
-		pos = nl + 2;
-	}
-
-    if (hdrEnd + 4 > HEADER_CAP) {
-        Response res = makeHtmlError(431, "Request Header Fields Too Large",
-                                     "<h1>431 Request Header Fields Too Large</h1>");
-        res.close_connection = true; // header block too big → close
-        m_clientWriteBuffers[fd] = build_http_response(res);
-        setPollToWrite(fd);
-        std::cerr << "[FD " << fd << "] -> RESP 431 header_cap (HDR block too big)\n";
+    if (m_clientBuffers[fd].size() > HEADER_CAP &&
+        m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
+    {
+        queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+                           "<h1>431 Request Header Fields Too Large</h1>");
         return;
     }
 
-    // ---- Parse ONCE (now that headers are complete & within cap) ------------
-    Request req = parseRequest(m_clientBuffers[fd]);
+    // ---- locate end of headers ---------------------------------------------
+    size_t hdrEnd = m_clientBuffers[fd].find("\r\n\r\n");
+    if (hdrEnd == std::string::npos)
+        return; // keep reading headers
 
-	//here do the guard against HTML request smuggling
-	size_t contentLength = 0;
-	bool hasTE = false;
-	int framingErr = validateBodyFraming(req.headers, contentLength, hasTE);
-	if (framingErr != 0)
-	{
-		Response res = makeHtmlError(400, "Bad Request", "<h1>400 Bad Request</h1><p>Invalid Content-Length / Transfer-Encoding</p>");
-		res.close_connection = true;
-		m_clientWriteBuffers[fd] = build_http_response(res);
-		setPollToWrite(fd);
-		return ;
-	}
+    // ---- header line-count cap (after headers complete) ---------------------
+    {
+        const size_t MAX_HEADER_LINES = 100;
+        size_t lines = 0, pos = 0;
+        while (pos < hdrEnd)
+        {
+            size_t nl = m_clientBuffers[fd].find("\r\n", pos);
+            if (nl == std::string::npos || nl > hdrEnd)
+                break;
+            ++lines;
+            if (lines > MAX_HEADER_LINES)
+            {
+                queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+                                   "<h1>431 Request Header Fields Too Large</h1>");
+                return;
+            }
+            pos = nl + 2;
+        }
+    }
+
+    // ---- duplicate/conflict checks from RAW header block (pre-parse) --------
+    {
+        const std::string headerBlock = m_clientBuffers[fd].substr(0, hdrEnd);
+        std::map<std::string, size_t> nameCounts;
+        countHeaderNames(headerBlock, nameCounts);
+
+        if (nameCounts["content-length"] > 1)
+        {
+            queueErrorAndClose(*this, fd, 400, "Bad Request",
+                               "<h1>400 Bad Request</h1><p>Multiple Content-Length headers</p>");
+            return;
+        }
+        if (nameCounts["content-length"] >= 1 && nameCounts["transfer-encoding"] >= 1)
+        {
+            queueErrorAndClose(*this, fd, 400, "Bad Request",
+                               "<h1>400 Bad Request</h1><p>Both Content-Length and Transfer-Encoding present</p>");
+            return;
+        }
+    }
+
+    // ---- parse request line + headers once ----------------------------------
+    Request req = parseRequest(m_clientBuffers[fd].substr(0, hdrEnd + 4));
     const std::string methodUpper = toUpperCopy(req.method);
+    const ServerConfig &server = findServerForClient(fd);
 
-    // ---- First-time header processing (limits, TE/CL, 405/411) --------------
-    if (!m_headersDone[fd]) {
+    // ---- numeric CL/TE validation (overflow-safe) ---------------------------
+    size_t contentLength = 0;
+    bool   hasTE = false;
+    int framingErr = validateBodyFraming(req.headers, contentLength, hasTE);
+    if (framingErr != 0)
+    {
+        queueErrorAndClose(*this, fd, 400, "Bad Request",
+                           "<h1>400 Bad Request</h1><p>Invalid Content-Length / Transfer-Encoding</p>");
+        return;
+    }
+
+    // ---- policy: client_max_body_size (skip when chunked) -------------------
+    if (!hasTE && server.client_max_body_size > 0 && contentLength > server.client_max_body_size)
+    {
+        queueErrorAndClose(*this, fd, 413, "Payload Too Large",
+                           "<h1>413 Payload Too Large</h1>");
+        return;
+    }
+
+    // ---- first-time per-FD header processing (limits, 405/411, etc.) --------
+    if (!m_headersDone[fd])
+    {
         m_headersDone[fd] = true;
 
-        const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
-        const RouteConfig* route   = findMatchingLocation(server, req.path);
+        const RouteConfig* route = findMatchingLocation(server, req.path);
 
-        // Resolve allowed body size (route overrides server)
+        // resolve per-FD allowed max body (route overrides server)
         size_t allowed = 0;
         if (route && route->max_body_size > 0) allowed = route->max_body_size;
         else if (server.client_max_body_size > 0) allowed = server.client_max_body_size;
         m_allowedMaxBody[fd] = allowed;
-        std::cerr << "[FD " << fd << "] allowedMaxBody=" << m_allowedMaxBody[fd] << "\n";
 
-        // 405 early (pre-body)
+        // early 405 (pre-body)
         if (route && !route->allowed_methods.empty() &&
-            !isMethodAllowedForRoute(methodUpper, route->allowed_methods)) {
+            !isMethodAllowedForRoute(methodUpper, route->allowed_methods))
+        {
             std::set<std::string> allowSet = normalizeAllowedForAllowHeader(route->allowed_methods);
             std::string allowHeader = joinAllowedMethods(allowSet);
+
             Response res;
             res.status_code = 405;
             res.status_message = "Method Not Allowed";
@@ -381,131 +409,87 @@ void SocketManager::handleClientRead(int fd)
             res.headers["Content-Length"] = to_string(res.body.length());
             const bool body_expected = (methodUpper == "POST" || methodUpper == "PUT");
             const bool body_fully_consumed = false;
-            std::cerr << "[FD " << fd << "] -> RESP 405 disallowed_method (pre-body)\n";
             finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
             return;
         }
 
-        // Extract CL/TE
-        std::map<std::string, std::string>::const_iterator itCL = req.headers.find("Content-Length");
-        std::map<std::string, std::string>::const_iterator itTE = req.headers.find("Transfer-Encoding");
+        // set CL / chunked expectations for this FD
+        std::map<std::string, std::string>::const_iterator itCL = req.headers.find("content-length");
+        std::map<std::string, std::string>::const_iterator itTE = req.headers.find("transfer-encoding");
 
-        std::cerr << "[FD " << fd << "] CL=" << (itCL == req.headers.end() ? "<none>" : itCL->second)
-                  << " TE=" << (itTE == req.headers.end() ? "<none>" : itTE->second) << "\n";
+        m_expectedContentLen[fd] = (itCL != req.headers.end())
+                                   ? static_cast<size_t>(std::strtoul(itCL->second.c_str(), NULL, 10))
+                                   : 0;
 
-        if (itCL != req.headers.end()) {
-            // Validate CL
-            bool allDigits = !itCL->second.empty() &&
-                             itCL->second.find_first_not_of("0123456789") == std::string::npos;
-            if (!allDigits) {
-                Response res = makeHtmlError(400, "Bad Request", "<h1>400 Bad Request</h1>");
-                const bool body_expected = (methodUpper == "POST" || methodUpper == "PUT");
-                const bool body_fully_consumed = false;
-                std::cerr << "[FD " << fd << "] -> RESP 400 malformed Content-Length\n";
-                finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
-                return;
-            }
-            unsigned long cl_ul = strtoul(itCL->second.c_str(), NULL, 10);
-            size_t contentLen = static_cast<size_t>(cl_ul);
-            m_expectedContentLen[fd] = contentLen;
-
-            // Early 413 if CL > limit
-            if (m_allowedMaxBody[fd] > 0 && contentLen > m_allowedMaxBody[fd]) {
-                Response res = makeHtmlError(413, "Payload Too Large", "<h1>413 Payload Too Large</h1>");
-                const bool body_expected = (methodUpper == "POST" || methodUpper == "PUT");
-                const bool body_fully_consumed = false;
-                std::cerr << "[FD " << fd << "] -> RESP 413 early (CL > allowed)\n";
-                finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
-                return;
-            }
-        } else {
-            m_expectedContentLen[fd] = 0;
-        }
-
-        // TE: chunked?
         bool isChunked = false;
-        if (itTE != req.headers.end()) {
+        if (itTE != req.headers.end())
+        {
             std::string te = itTE->second;
             for (size_t i = 0; i < te.size(); ++i)
                 te[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(te[i])));
             isChunked = (te.find("chunked") != std::string::npos);
         }
         m_isChunked[fd] = isChunked;
-        std::cerr << "[FD " << fd << "] TE chunked? " << (isChunked ? "yes" : "no") << "\n";
 
-        // 411 if POST/PUT and neither CL nor chunked
+        // 411: POST/PUT must provide length (CL or chunked)
         if ((methodUpper == "POST" || methodUpper == "PUT") &&
-            !isChunked && itCL == req.headers.end()) {
+            !m_isChunked[fd] && itCL == req.headers.end())
+        {
             Response res;
             res.status_code = 411;
             res.status_message = "Length Required";
             res.headers["Content-Type"] = "text/html; charset=utf-8";
-            res.body = "<h1> 411 Length Required</h1>";
+            res.body = "<h1>411 Length Required</h1>";
             res.headers["Content-Length"] = to_string(res.body.length());
             const bool body_expected = true;
-            const bool body_fully_consumed = true; // there is no body to read
-            std::cerr << "[FD " << fd << "] -> RESP 411 no_length (POST/PUT w/o CL/TE)\n";
+            const bool body_fully_consumed = true; // no body to read
             finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
             return;
         }
     }
 
-    // ---- Body accounting / streaming guards ---------------------------------
-    size_t hdrEndNow = m_clientBuffers[fd].find("\r\n\r\n");
-    size_t bodyStart = (hdrEndNow == std::string::npos) ? 0 : hdrEndNow + 4;
+    // ---- body accounting / streaming limits ---------------------------------
+    size_t bodyStart = hdrEnd + 4;
     size_t bodyBytes = (m_clientBuffers[fd].size() > bodyStart)
                        ? (m_clientBuffers[fd].size() - bodyStart) : 0;
 
-    std::cerr << "[FD " << fd << "] bodyStart=" << bodyStart
-              << " bodyBytes=" << bodyBytes << "\n";
-
     // 413 streaming cap
-    if (m_allowedMaxBody[fd] > 0 && bodyBytes > m_allowedMaxBody[fd]) {
-        Response res = makeHtmlError(413, "Payload Too Large", "<h1>413 Payload Too Large</h1>");
-        const bool body_expected = (methodUpper == "POST" || methodUpper == "PUT") || m_isChunked[fd];
-        const bool body_fully_consumed = false;
-        std::cerr << "[FD " << fd << "] -> RESP 413 streaming (body > allowed)\n";
-        finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
+    if (m_allowedMaxBody[fd] > 0 && bodyBytes > m_allowedMaxBody[fd])
+    {
+        queueErrorAndClose(*this, fd, 413, "Payload Too Large",
+                           "<h1>413 Payload Too Large</h1>");
         return;
     }
 
-    // 400 if overrun past CL
-    if (m_expectedContentLen[fd] > 0 && bodyBytes > m_expectedContentLen[fd]) {
-        Response res = makeHtmlError(400, "Bad Request", "<h1>400 Bad Request</h1>");
-        const bool body_expected = (methodUpper == "POST" || methodUpper == "PUT") || m_isChunked[fd];
-        const bool body_fully_consumed = false;
-        std::cerr << "[FD " << fd << "] -> RESP 400 body_overrun (body > CL)\n";
-        finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
+    // 400 if body exceeds declared Content-Length
+    if (m_expectedContentLen[fd] > 0 && bodyBytes > m_expectedContentLen[fd])
+    {
+        queueErrorAndClose(*this, fd, 400, "Bad Request",
+                           "<h1>400 Bad Request</h1><p>Body exceeds Content-Length</p>");
         return;
     }
 
-    // Wait for full CL body
-    if (m_expectedContentLen[fd] > 0 && bodyBytes < m_expectedContentLen[fd]) {
-        std::cerr << "[FD " << fd << "] waiting body... (" << bodyBytes
-                  << "/" << m_expectedContentLen[fd] << ")\n";
+    // wait for full CL body (if any)
+    if (m_expectedContentLen[fd] > 0 && bodyBytes < m_expectedContentLen[fd])
         return;
-    }
 
-    // Wait for full chunked terminator (placeholder until real decoder)
-    if (m_isChunked[fd]) {
+    // wait for chunked terminator (placeholder until real decoder)
+    if (m_isChunked[fd])
+    {
         size_t endMarkerPos = std::string::npos;
         if (m_clientBuffers[fd].size() >= bodyStart + 5)
             endMarkerPos = m_clientBuffers[fd].find("\r\n0\r\n\r\n", bodyStart);
-        if (endMarkerPos == std::string::npos) {
-            std::cerr << "[FD " << fd << "] waiting chunked body… bodyBytes=" << bodyBytes << "\n";
+        if (endMarkerPos == std::string::npos)
             return;
-        }
-        std::cerr << "[FD " << fd << "] chunked body complete (terminator found)\n";
     }
 
-    // ---- Dispatch (static/autoindex/redirect) --------------------------------
-    const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]];
-    const RouteConfig* route   = findMatchingLocation(server, req.path);
+    // ---- dispatch: static/autoindex/redirect --------------------------------
+    const RouteConfig* route = findMatchingLocation(server, req.path);
 
     std::string effectiveRoot  = (route && !route->root.empty())  ? route->root  : server.root;
     std::string effectiveIndex = (route && !route->index.empty()) ? route->index : server.index;
 
-    // Rewrite to stripped path (route prefix removed)
+    // strip route prefix
     std::string strippedPath = req.path;
     if (route && strippedPath.find(route->path) == 0)
         strippedPath = strippedPath.substr(route->path.length());
@@ -514,9 +498,11 @@ void SocketManager::handleClientRead(int fd)
 
     std::string fullPath = effectiveRoot + strippedPath;
 
-    if (dirExists(fullPath)) {
-        // Trailing slash redirect
-        if (!req.path.empty() && req.path[req.path.length() - 1] != '/') {
+    if (dirExists(fullPath))
+    {
+        // redirect missing trailing slash
+        if (!req.path.empty() && req.path[req.path.length() - 1] != '/')
+        {
             Response res;
             res.status_code = 301;
             res.status_message = "Moved Permanently";
@@ -524,16 +510,18 @@ void SocketManager::handleClientRead(int fd)
             res.headers["Content-Length"] = "0";
             const bool body_expected = false;
             const bool body_fully_consumed = true;
-            std::cerr << "[FD " << fd << "] -> RESP 301 redirect add-trailing-slash\n";
             finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
             return;
         }
-        // Try index file
+
+        // try index
         std::string indexCandidate = fullPath;
         if (!indexCandidate.empty() && indexCandidate[indexCandidate.size() - 1] != '/')
             indexCandidate += '/';
         indexCandidate += effectiveIndex;
-        if (fileExists(indexCandidate)) {
+
+        if (fileExists(indexCandidate))
+        {
             std::string body = readFile(indexCandidate);
             Response res;
             res.status_code = 200;
@@ -544,12 +532,13 @@ void SocketManager::handleClientRead(int fd)
             if (methodUpper == "HEAD") res.body.clear();
             const bool body_expected = false;
             const bool body_fully_consumed = true;
-            std::cerr << "[FD " << fd << "] -> RESP 200 index\n";
             finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
             return;
         }
-        // Autoindex
-        if (route && route->autoindex) {
+
+        // autoindex
+        if (route && route->autoindex)
+        {
             std::string html = generateAutoIndexPage(fullPath, req.path);
             Response res;
             res.status_code = 200;
@@ -560,32 +549,30 @@ void SocketManager::handleClientRead(int fd)
             if (methodUpper == "HEAD") res.body.clear();
             const bool body_expected = false;
             const bool body_fully_consumed = true;
-            std::cerr << "[FD " << fd << "] -> RESP 200 autoindex\n";
             finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
             return;
         }
     }
 
-    // Path safety / existence
-    if (!isPathSafe(effectiveRoot, fullPath)) {
+    // path safety / existence
+    if (!isPathSafe(effectiveRoot, fullPath))
+    {
         Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
         const bool body_expected = false;
         const bool body_fully_consumed = true;
-        std::cerr << "[FD " << fd << "] -> RESP 403 unsafe_path\n";
         finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
         return;
     }
-
-    if (!fileExists(fullPath)) {
+    if (!fileExists(fullPath))
+    {
         Response res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1>");
         const bool body_expected = false;
         const bool body_fully_consumed = true;
-        std::cerr << "[FD " << fd << "] -> RESP 404 not_found\n";
         finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
         return;
     }
 
-    // Static file 200
+    // static file 200
     {
         std::string body = readFile(fullPath);
         Response res;
@@ -597,11 +584,11 @@ void SocketManager::handleClientRead(int fd)
         if (methodUpper == "HEAD") res.body.clear();
         const bool body_expected = false;
         const bool body_fully_consumed = true;
-        std::cerr << "[FD " << fd << "] -> RESP 200 file\n";
         finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
         return;
     }
 }
+
 
 
 //previous handleClientRead() without rooting logic
@@ -796,6 +783,23 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 	m_clientWriteBuffers[fd] = build_http_response(res);
 	setPollToWrite(fd);
 }
+
+//needed an overload of finalize
+void SocketManager::finalizeAndQueue(int fd, Response &res)
+{
+	Request dummy;                 // minimal safe defaults
+	dummy.http_version = "HTTP/1.1";
+	dummy.method = "GET";          // irrelevant; we’ll close anyway
+	dummy.path = "/";
+
+	// For errors raised before body handling:
+	const bool body_expected = false;
+	const bool body_fully_consumed = true;
+
+	finalizeAndQueue(fd, dummy, res, body_expected, body_fully_consumed);
+}
+
+
 
 
 //previous run funciton now its cleaner and divided in multiple functions.

@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/03 17:31:54 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/10 19:50:17 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -68,6 +68,7 @@ class SocketManager
 	void setServers(const std::vector<ServerConfig> & servers);
 	
 	void finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed);
+	void finalizeAndQueue(int fd, Response &res);
 };
 
 #endif
