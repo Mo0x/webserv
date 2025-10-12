@@ -206,3 +206,22 @@ void countHeaderNames(const std::string &rawHeaders, std::map<std::string, size_
         pos = (nl == rawHeaders.size()) ? nl : nl + 2; 
     }
 }
+
+std::string toLowerCopy(const std::string &str)
+{
+	std::string t;
+	t.reserve(str.size());
+	for (size_t i = 0; i < str.size(); ++i)
+		t.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(str[i]))));
+	return t;
+}
+
+void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs)
+{
+	if (hdrs.empty())
+		return;
+	std::map<std::string, std::string> lower;
+	for (std::map<std::string, std::string>::const_iterator it = hdrs.begin(); it != hdrs.end(); it++)
+		lower[toLowerCopy(it->first)] = it->second;
+	hdrs.swap(lower);
+}

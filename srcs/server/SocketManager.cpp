@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/10 20:04:42 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/12 20:04:56 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -291,11 +291,18 @@ static void queueErrorAndClose(SocketManager &sm, int fd, int status,
 
 void SocketManager::handleClientRead(int fd)
 {
-    // ---- read from socket ---------------------------------------------------
+    // ---- read from socket (nonblocking-safe) --------------------------------
     char buffer[1024];
     int bytes = ::recv(fd, buffer, sizeof(buffer), 0);
-    if (bytes <= 0)
+    if (bytes == 0)
     {
+        handleClientDisconnect(fd);
+        return;
+    }
+    if (bytes < 0)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+            return;
         handleClientDisconnect(fd);
         return;
     }
@@ -314,8 +321,34 @@ void SocketManager::handleClientRead(int fd)
     // ---- locate end of headers ---------------------------------------------
     size_t hdrEnd = m_clientBuffers[fd].find("\r\n\r\n");
     if (hdrEnd == std::string::npos)
+	{
         return; // keep reading headers
+	}
+	// ---- post-parse header size caps (to catch huge single headers) ---------
+	// Reuse the same HEADER_CAP you defined earlier (32 * 1024)
+	const size_t MAX_HEADER_LINE = 8 * 1024;  // per-line limit
 
+	// total header block size (up to but not including the blank line)
+	if (hdrEnd > HEADER_CAP) {
+		queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+						"<h1>431 Request Header Fields Too Large</h1>");
+		return;
+	}
+
+	// per-line length cap
+	{
+		size_t pos = 0;
+		while (pos < hdrEnd) {
+			size_t nl = m_clientBuffers[fd].find("\r\n", pos);
+			if (nl == std::string::npos || nl > hdrEnd) break;
+			if (nl - pos > MAX_HEADER_LINE) {
+				queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+								"<h1>431 Request Header Fields Too Large</h1>");
+				return;
+			}
+			pos = nl + 2;
+		}
+	}
     // ---- header line-count cap (after headers complete) ---------------------
     {
         const size_t MAX_HEADER_LINES = 100;
@@ -341,7 +374,6 @@ void SocketManager::handleClientRead(int fd)
         const std::string headerBlock = m_clientBuffers[fd].substr(0, hdrEnd);
         std::map<std::string, size_t> nameCounts;
         countHeaderNames(headerBlock, nameCounts);
-
         if (nameCounts["content-length"] > 1)
         {
             queueErrorAndClose(*this, fd, 400, "Bad Request",
@@ -357,9 +389,23 @@ void SocketManager::handleClientRead(int fd)
     }
 
     // ---- parse request line + headers once ----------------------------------
-    Request req = parseRequest(m_clientBuffers[fd].substr(0, hdrEnd + 4));
-    const std::string methodUpper = toUpperCopy(req.method);
-    const ServerConfig &server = findServerForClient(fd);
+	Request req = parseRequest(m_clientBuffers[fd].substr(0, hdrEnd + 4));
+
+	// normalize header keys BEFORE any framing/CL/TE validation
+	normalizeHeaderKeys(req.headers);
+
+	const std::string methodUpper = toUpperCopy(req.method);
+
+	// Safe server mapping (non-throwing path shown; use your helper/try-version if you have it)
+	const ServerConfig* serverPtr = 0;
+	try {
+		serverPtr = &findServerForClient(fd);
+	} catch (...) {
+		queueErrorAndClose(*this, fd, 400, "Bad Request",
+						"<h1>400 Bad Request</h1><p>No server mapping for this connection</p>");
+		return;
+	}
+	const ServerConfig& server = *serverPtr;
 
     // ---- numeric CL/TE validation (overflow-safe) ---------------------------
     size_t contentLength = 0;
@@ -413,27 +459,13 @@ void SocketManager::handleClientRead(int fd)
             return;
         }
 
-        // set CL / chunked expectations for this FD
-        std::map<std::string, std::string>::const_iterator itCL = req.headers.find("content-length");
-        std::map<std::string, std::string>::const_iterator itTE = req.headers.find("transfer-encoding");
-
-        m_expectedContentLen[fd] = (itCL != req.headers.end())
-                                   ? static_cast<size_t>(std::strtoul(itCL->second.c_str(), NULL, 10))
-                                   : 0;
-
-        bool isChunked = false;
-        if (itTE != req.headers.end())
-        {
-            std::string te = itTE->second;
-            for (size_t i = 0; i < te.size(); ++i)
-                te[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(te[i])));
-            isChunked = (te.find("chunked") != std::string::npos);
-        }
-        m_isChunked[fd] = isChunked;
+        // expectations from validated framing
+        m_expectedContentLen[fd] = (!hasTE ? contentLength : 0);
+        m_isChunked[fd] = hasTE;
 
         // 411: POST/PUT must provide length (CL or chunked)
         if ((methodUpper == "POST" || methodUpper == "PUT") &&
-            !m_isChunked[fd] && itCL == req.headers.end())
+            !m_isChunked[fd] && m_expectedContentLen[fd] == 0)
         {
             Response res;
             res.status_code = 411;
@@ -477,8 +509,8 @@ void SocketManager::handleClientRead(int fd)
     if (m_isChunked[fd])
     {
         size_t endMarkerPos = std::string::npos;
-        if (m_clientBuffers[fd].size() >= bodyStart + 5)
-            endMarkerPos = m_clientBuffers[fd].find("\r\n0\r\n\r\n", bodyStart);
+        if (m_clientBuffers[fd].size() >= bodyStart + 4)
+            endMarkerPos = m_clientBuffers[fd].find("0\r\n\r\n", bodyStart);
         if (endMarkerPos == std::string::npos)
             return;
     }
@@ -588,9 +620,6 @@ void SocketManager::handleClientRead(int fd)
         return;
     }
 }
-
-
-
 //previous handleClientRead() without rooting logic
 
 /* void SocketManager::handleClientRead(int fd)
@@ -763,13 +792,27 @@ void SocketManager::setServers(const std::vector<ServerConfig> & servers)
 {
 	m_serversConfig = servers;
 }
-
+/* 
 const ServerConfig& SocketManager::findServerForClient(int fd) const
 {
 	std::map<int, size_t>::const_iterator it = m_clientToServerIndex.find(fd);
 	if (it == m_clientToServerIndex.end())
 		throw std::runtime_error("No matching server config for client FD");
 	return m_config.servers[it->second];
+}
+ */
+
+const ServerConfig& SocketManager::findServerForClient(int fd) const
+{
+	std::map<int, size_t>::const_iterator it = m_clientToServerIndex.find(fd);
+	if (it == m_clientToServerIndex.end())
+		throw std::runtime_error("No matching server config for client FD");
+
+	const size_t idx = it->second;
+	if (idx >= m_serversConfig.size())
+		throw std::runtime_error("Server index out of range for client FD");
+
+	return m_serversConfig[idx]; // ← use the same vector you map into
 }
 
 void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed)
