@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/10 19:50:17 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/16 21:10:38 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -44,6 +44,9 @@ class SocketManager
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
 	std::map<int, bool> m_isChunked;
+
+	//for keep-alive connection
+	std::map<int, bool> m_closeAfterWrite;
 	
 	public:
 	SocketManager(const Config &config);
@@ -64,11 +67,14 @@ class SocketManager
 	const ServerConfig& findServerForClient(int fd) const;
 	void setPollToWrite(int fd);
 	void clearPollout(int fd);
+	bool clientRequestedClose(const Request &req) const;
 
 	void setServers(const std::vector<ServerConfig> & servers);
 	
 	void finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed);
 	void finalizeAndQueue(int fd, Response &res);
+	//for keep-alive
+	bool shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const;
 };
 
 #endif

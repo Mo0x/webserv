@@ -6,13 +6,14 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/20 19:21:04 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/04/20 19:39:40 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/14 21:44:44 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "request_reponse_struct.hpp"
 #include <sstream>
 #include <iostream>
+#include "utils.hpp"
 
 Request parseRequest(const std::string &raw)
 {
@@ -36,6 +37,7 @@ Request parseRequest(const std::string &raw)
 				value.erase(0, 1);
 			if (!value.empty() && value[value.size() - 1] == '\r')
 				value. erase(value.size() - 1);
+			key = toLowerCopy(key);
 			req.headers[key] = value;
 		}
 	}

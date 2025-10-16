@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/12 20:04:56 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/16 21:23:36 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -691,8 +691,15 @@ void SocketManager::handleClientWrite(int fd)
 
 	const size_t MAX_CHUNK = 16 * 1024;
 	const size_t toSend = buffer.size() < MAX_CHUNK ? buffer.size() : MAX_CHUNK;
+	// Use MSG_NOSIGNAL to prevent SIGPIPE from killing the process if the client
+	// disconnects while we're sending. On systems without this flag (e.g. macOS/BSD),
+	// the call falls back to a normal send() and relies on EPIPE handling instead.V
+	#ifdef MSG_NOSIGNAL
+		ssize_t n = ::send(fd,buffer.data(), toSend, MSG_NOSIGNAL);
+	#else
+		ssize_t n = ::send(fd, buffer.data(), toSend, 0); // ::send <---- because we want to use send the system call and not some SocketManager::sent
+	#endif
 
-	ssize_t n = ::send(fd, buffer.data(), toSend, 0); // ::send <---- because we want to use send the system call and not some SocketManager::sent
 
 	if (n < 0)
 	{
@@ -705,13 +712,26 @@ void SocketManager::handleClientWrite(int fd)
 	}
 
 	buffer.erase(0, static_cast<size_t>(n));
-	if (!buffer.empty())
+	if (buffer.empty())
 	{
-		// Still have data; keep POLLOUT set (we already changed setPollToWrite to |=).
-		return ;
+		 // --- NEW LOGIC: check if we should keep-alive or close ---
+        std::map<int, bool>::iterator itFlag = m_closeAfterWrite.find(fd);
+        const bool mustClose = (itFlag != m_closeAfterWrite.end() && itFlag->second);
+        if (itFlag != m_closeAfterWrite.end())
+            m_closeAfterWrite.erase(itFlag);
+
+        if (mustClose)
+        {
+            handleClientDisconnect(fd);
+        }
+        else
+        {
+				// Keep the connection alive for the next request
+			clearPollout(fd);            // stop monitoring for write events
+			m_clientBuffers[fd].clear(); // reset the per-client read buffer
+			// no explicit state change needed — the next POLLIN event will start a new request
+        } 
 	}
-	m_clientWriteBuffers.erase(it);
-	handleClientDisconnect(fd);
 }
 
 void SocketManager::handleClientDisconnect(int fd)
@@ -825,24 +845,81 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 
 	m_clientWriteBuffers[fd] = build_http_response(res);
 	setPollToWrite(fd);
+	m_closeAfterWrite[fd] = close_it;
+	/* std::cerr << "[KEEPALIVE] http=" << req.http_version
+          << " conn='" << (req.headers.count("connection") ? req.headers.find("connection")->second : std::string("<none>"))
+          << "' -> client_close=" << client_close
+          << " close_it=" << close_it << "\n"; */
 }
 
 //needed an overload of finalize
 void SocketManager::finalizeAndQueue(int fd, Response &res)
 {
-	Request dummy;                 // minimal safe defaults
-	dummy.http_version = "HTTP/1.1";
-	dummy.method = "GET";          // irrelevant; we’ll close anyway
-	dummy.path = "/";
+	// Without a parsed Request, we can't honor per-request keep-alive safely.
+    // Default to closing the connection after this response.
+    const bool headers_complete       = true;
+    const bool body_expected          = false;
+    const bool body_fully_consumed    = true;
+    const bool client_close           = true; // <- force close in no-context paths
 
-	// For errors raised before body handling:
-	const bool body_expected = false;
-	const bool body_fully_consumed = true;
+    const bool close_it = shouldCloseAfterThisResponse(
+        /*status_code*/ res.status_code,
+        headers_complete,
+        body_expected,
+        body_fully_consumed,
+        client_close
+    );
+    res.close_connection = close_it;
 
-	finalizeAndQueue(fd, dummy, res, body_expected, body_fully_consumed);
+    m_clientWriteBuffers[fd] = build_http_response(res);
+    setPollToWrite(fd);
+
+    // remember for drain phase
+    m_closeAfterWrite[fd] = close_it;
 }
 
 
+bool SocketManager::shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const
+{
+	(void)status_code;
+	if (client_close)
+		return true;
+	if (!headers_complete)
+		return true;
+	if (body_expected && !body_fully_consumed)
+		return true;
+	return false;
+}
+
+
+
+bool SocketManager::clientRequestedClose(const Request &req) const
+{
+    // Parse HTTP version from the request line string like "HTTP/1.1"
+    const std::string &hv = req.http_version;
+    const bool is11 = (hv.size() >= 8 && hv.compare(0, 8, "HTTP/1.1") == 0);
+    const bool is10 = (hv.size() >= 8 && hv.compare(0, 8, "HTTP/1.0") == 0);
+
+    // Header keys are lowercased at parse time (Step 1); use "connection"
+    std::string connVal;
+    std::map<std::string, std::string>::const_iterator it = req.headers.find("connection");
+    if (it != req.headers.end())
+        connVal = toLowerCopy(trimCopy(it->second));  // normalize value
+
+    // Split on comma; check first token only (common clients send "close" or "keep-alive")
+    size_t comma = connVal.find(',');
+    if (comma != std::string::npos)
+        connVal.erase(comma); // keep first token
+    connVal = trimCopy(connVal);
+
+    if (is11)
+        return (connVal == "close");               // HTTP/1.1: keep-alive by default
+    if (is10)
+        return (connVal != "keep-alive");          // HTTP/1.0: close unless explicitly keep-alive
+
+    // Unknown/other versions: be safe and close
+    return true;
+}
 
 
 //previous run funciton now its cleaner and divided in multiple functions.

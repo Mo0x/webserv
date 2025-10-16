@@ -124,18 +124,12 @@ bool shouldCloseAfterThisResponse(int status, bool headers_complete, bool body_w
 	return false;
 }
 
-bool clientRequestedClose(const Request &req)
+std::string trimCopy(const std::string &s)
 {
-	if (req.http_version != "HTTP/1.1")
-		return true;
-	std::map<std::string, std::string>::const_iterator it = req.headers.find("Connection");
-	if (it == req.headers.end())
-		return false;
-	
-	std::string v = it->second;
-	for (size_t i = 0; i < v.size(); ++i)
-		v[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(v[i])));
-	return v.find("CLOSE") != std::string::npos;
+    size_t b = 0, e = s.size();
+    while (b < e && (s[b] == ' ' || s[b] == '\t')) ++b;
+    while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t')) --e;
+    return s.substr(b, e - b);
 }
 
 std::string getMimeTypeFromPath(const std::string& path) 

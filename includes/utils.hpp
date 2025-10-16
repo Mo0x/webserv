@@ -17,5 +17,7 @@ bool clientRequestedClose(const Request& req);
 std::string getMimeTypeFromPath(const std::string& path);
 void countHeaderNames(const std::string &rawHeaders, std::map<std::string, size_t> &outCounts);
 void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs);
+std::string toLowerCopy(const std::string &str);
+std::string trimCopy(const std::string &s);
 
 #endif
