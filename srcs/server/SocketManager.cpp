@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/16 21:23:36 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/17 20:54:23 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -478,6 +478,50 @@ void SocketManager::handleClientRead(int fd)
             finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
             return;
         }
+		std::map<std::string, std::string>::const_iterator itExp = req.headers.find("expect");
+		if (itExp != req.headers.end())
+		{
+    // Only HTTP/1.1 defines Expect: 100-continue semantics; ignore on HTTP/1.0.
+		    const bool isHTTP11 = (req.http_version.size() >= 8 &&
+                         req.http_version.compare(0, 8, "HTTP/1.1") == 0);
+
+		    if (isHTTP11)
+  			{
+        // Normalize the value; if there are multiple expectations, keep first token.
+    		    std::string expectVal = toLowerCopy(itExp->second);
+      			size_t comma = expectVal.find(',');
+        		if (comma != std::string::npos)
+          			expectVal.erase(comma);
+        // trim simple spaces/tabs
+        		while (!expectVal.empty() && (expectVal[0] == ' ' || expectVal[0] == '\t'))
+					expectVal.erase(0, 1);
+        		while (!expectVal.empty() && (expectVal[expectVal.size() - 1] == ' ' || expectVal[expectVal.size() - 1] == '\t'))
+					expectVal.erase(expectVal.size() - 1);
+
+        // RFC: we only recognize token "100-continue". Anything else -> 417.
+		        if (expectVal == "100-continue" || !expectVal.empty())
+  			    {
+					Response res;
+					res.status_code = 417;                      // Expectation Failed
+					res.status_message = "Expectation Failed";
+					res.headers["content-type"] = "text/plain; charset=utf-8";
+					res.body = "417 Expectation Failed\n";
+					res.headers["Content-Length"] = to_string(res.body.length()); 
+
+					// No body is (or will be) consumed here.
+					const bool body_expected       = true;
+					const bool body_fully_consumed = false;
+					std::cerr << "[EXPECT] 417 on fd " << fd
+          << " http=" << req.http_version
+          << " expect='" << itExp->second << "'\n";
+
+					finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
+					return; // stop processing this request
+       			}
+        // (If value empty, fall through and ignore — extremely unlikely in practice.)
+    		}
+    // HTTP/1.0: ignore Expect entirely.
+		}
     }
 
     // ---- body accounting / streaming limits ---------------------------------
