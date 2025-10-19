@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/17 20:54:23 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/19 19:33:24 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -417,6 +417,27 @@ void SocketManager::handleClientRead(int fd)
                            "<h1>400 Bad Request</h1><p>Invalid Content-Length / Transfer-Encoding</p>");
         return;
     }
+
+	if (hasTE)
+    {
+        std::map<std::string, std::string>::const_iterator itTE = req.headers.find("transfer-encoding");
+        if (itTE != req.headers.end())
+        {
+            std::string teVal = toLowerCopy(itTE->second);
+            // trim spaces
+            while (!teVal.empty() && (teVal[0] == ' ' || teVal[0] == '\t')) teVal.erase(0, 1);
+            while (!teVal.empty() && (teVal[teVal.size() - 1] == ' ' || teVal[teVal.size() - 1] == '\t')) teVal.erase(teVal.size() - 1);
+
+            // Only "chunked" is supported, no stacked encodings
+            if (teVal != "chunked")
+            {
+                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                                   "<h1>400 Bad Request</h1><p>Unsupported Transfer-Encoding</p>");
+                return;
+            }
+        }
+    }
+
 
     // ---- policy: client_max_body_size (skip when chunked) -------------------
     if (!hasTE && server.client_max_body_size > 0 && contentLength > server.client_max_body_size)
