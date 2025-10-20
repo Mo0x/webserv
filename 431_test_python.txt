@@ -1,0 +1,33 @@
+A) Huge single header value → 431
+
+python3 - <<'PY'
+import socket
+s=socket.socket(); s.connect(("127.0.0.1",8081))
+big="A"*40000
+req = "GET / HTTP/1.1\r\nHost: x\r\nX-Big: %s\r\n\r\n" % big
+s.sendall(req.encode("ascii"))
+print(s.recv(4096)); s.close()
+PY
+
+
+B) Too many lines (>100) → 431 (you already have this)
+python3 - <<'PY'
+import socket
+s=socket.socket(); s.connect(("127.0.0.1",8081))
+lines = "".join("X-%03d: a\r\n" % i for i in range(120))
+req = "GET / HTTP/1.1\r\nHost: x\r\n" + lines + "\r\n"
+s.sendall(req.encode("ascii"))
+print(s.recv(4096)); s.close()
+PY
+
+C) Per-line too long (>8KB) → 431
+
+python3 - <<'PY'
+import socket
+s=socket.socket(); s.connect(("127.0.0.1",8081))
+line = "X-Long: " + "B"*9000 + "\r\n"
+req = "GET / HTTP/1.1\r\nHost: x\r\n" + line + "\r\n"
+s.sendall(req.encode("ascii"))
+print(s.recv(4096)); s.close()
+PY
+

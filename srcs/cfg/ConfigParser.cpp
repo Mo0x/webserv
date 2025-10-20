@@ -365,16 +365,18 @@ RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens, s
 {
     RouteConfig ret;
 
-    while (current < tokens.size() && tokens[current].value != "}") {
+    while (current < tokens.size() && tokens[current].value != "}")
+    {
         std::string raw = tokens[current].value;
-        if (raw.empty() || raw[0] == '#') {
+        if (raw.empty() || raw[0] == '#')
+        {
             ++current;
             continue;
         }
 
         std::string directive = raw;
         ++current;
-        if (directive == "allowed_methods") {
+         if (directive == "methods" || directive == "method" || directive == "allowed_methods") {
             while (tokens[current].value != ";") {
                 ret.allowed_methods.insert(tokens[current++].value);
                 if (current >= tokens.size())
@@ -435,6 +437,10 @@ RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens, s
     if (tokens[current].value != "}")
         throw std::runtime_error("Expected '}' to close location block");
     current++;
+    if (ret.allowed_methods.empty())
+    {
+        ret.allowed_methods.insert("GET"); // default here, HEAD is added later via utils functions
+    }
 
     std::cout << "[DEBUG] Parsed location index: '" << ret.index << "'" << std::endl;
     return ret;
