@@ -19,5 +19,6 @@ void countHeaderNames(const std::string &rawHeaders, std::map<std::string, size_
 void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs);
 std::string toLowerCopy(const std::string &str);
 std::string trimCopy(const std::string &s);
+bool std_to_hex(const std::string &hex_part, size_t &ret);
 
 #endif

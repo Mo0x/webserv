@@ -46,11 +46,11 @@ class SocketManager
 	std::map<int, bool> m_isChunked;
 
 	//for keep-alive connection
-	std::map<int, bool> m_closeAfterWrite;
-	
-	public:
-	SocketManager(const Config &config);
-	SocketManager();
+        std::map<int, bool> m_closeAfterWrite;
+
+        public:
+        SocketManager(const Config &config);
+        SocketManager();
 	~SocketManager();
 
 	void addServer(const std::string& host, unsigned short port);
@@ -71,10 +71,30 @@ class SocketManager
 
 	void setServers(const std::vector<ServerConfig> & servers);
 	
-	void finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed);
-	void finalizeAndQueue(int fd, Response &res);
-	//for keep-alive
-	bool shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const;
+        void finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed);
+        void finalizeAndQueue(int fd, Response &res);
+        //for keep-alive
+        bool shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const;
+
+    private:
+        bool readIntoClientBuffer(int fd);
+        bool locateHeaders(int fd, size_t &hdrEnd);
+        bool enforceHeaderLimits(int fd, size_t hdrEnd);
+        bool parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
+                                     const ServerConfig* &server,
+                                     std::string &methodUpper,
+                                     size_t &contentLength,
+                                     bool &hasTE);
+        bool processFirstTimeHeaders(int fd, const Request &req,
+                                     const ServerConfig &server,
+                                     const std::string &methodUpper,
+                                     bool hasTE,
+                                     size_t contentLength);
+        bool ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd);
+        void dispatchRequest(int fd, const Request &req,
+                             const ServerConfig &server,
+                             const std::string &methodUpper);
+        void resetRequestState(int fd);
 };
 
 #endif
