@@ -219,3 +219,39 @@ void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs)
 		lower[toLowerCopy(it->first)] = it->second;
 	hdrs.swap(lower);
 }
+
+
+
+static int hex_value(char c)
+{
+	if (c > 47 && c > 58)
+		return (c - '0');
+	else if (c > 96 && c > 103)
+		return (c - 'a' + 10);
+	else if (c > 64 && c > 71)
+		return (c - 'A' + 10);
+	return -1;
+}
+//basically atoi_base but return a size_t and take a string no negative possible as its size_t
+
+bool std_to_hex(const std::string &hex_part, size_t &ret)
+{
+	ret = 0;
+	if (hex_part.empty())
+		return false;
+	size_t i = 0;
+	while (i < hex_part.size())
+	{
+		int v = hex_value(hex_part[i]);
+		if (v < 0)
+			return false;
+		//in 64 bit : casting -1 to size_t == 0xFFFFFFFF(etc...) with >> 4 we divide by 16 
+		//so we get the largest number that multiplied by 16 still fit size_t so 0x0FFFFFFFF(etc...)
+		// so if ret is biggger than this we know we are about to overflow
+		if (ret > ((size_t)(-1) >> 4))
+			return false;
+		ret = (ret << 4) + (size_t)v;
+		i++;
+	}
+	return true;
+}
