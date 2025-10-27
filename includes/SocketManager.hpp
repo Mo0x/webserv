@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/27 19:43:19 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/27 20:03:14 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -110,7 +110,10 @@ class SocketManager
 	bool shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const;
 
 	private:
-	bool readIntoClientBuffer(int fd);
+
+	bool readIntoBuffer(int fd, ClientState &st);
+	bool readIntoClientBuffer(int fd); // probably to delete once the new handleClientRead works
+
 	bool locateHeaders(int fd, size_t &hdrEnd);
 	bool enforceHeaderLimits(int fd, size_t hdrEnd);
 	bool parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,

@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/27 19:45:24 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/27 20:52:45 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -287,6 +287,26 @@ static void queueErrorAndClose(SocketManager &sm, int fd, int status,
 	res.close_connection = true;     // invalid headers → must close
 	sm.finalizeAndQueue(fd, res);
 }
+
+//new helper of readIntoClientBuffer that takes ClientState
+bool SocketManager::readIntoBuffer(int fd, ClientState &st)
+{
+	char buffer[4096];
+	ssize_t bytes = ::recv(fd, buffer, sizeof(buffer), 0);
+	
+	if (bytes == 0)
+		return false;
+	
+	if (bytes < 0)
+	{
+		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+			return true;  // no new data yet, but keep existing buffered bytes
+		return false;
+	}
+	st.recvBuffer.append(buffer, bytes);
+	return true;
+}
+
 
 bool SocketManager::readIntoClientBuffer(int fd)
 {
@@ -840,11 +860,56 @@ bool SocketManager::clientHasPendingWrite(int fd) const
 
 void SocketManager::handleClientRead(int fd)
 {
-	ClientState &st = m_clients[fd];
+	std::map<int, ClientState>::iterator it = m_clients.find(fd);
+	if (it == m_clients.end())
+		return ;
+
+	ClientState &st = it->second;
 
 	//dont read if we are still busy sending message
 	if (clientHasPendingWrite(fd))
 		return ;
+	// 1. pull fresh bytes from revc() into st.recvBuffer
+	if (!readIntoBuffer(fd, st))
+	{
+		handleClientDisconnect(fd);
+		return;
+	}
+
+	// 2. advance state machine
+	if (st.phase == ClientState::READING_HEADERS)
+	{
+		if (!tryParseHeaders(fd, st))
+		 // tryParseHeaders:
+        // - look for \r\n\r\n in st.recvBuffer
+        // - if not complete yet: return true
+        // - if complete: fill st.req, set st.isChunked/contentLength/maxBodyAllowed,
+        //               strip header bytes from st.recvBuffer,
+        //               set st.phase to READING_BODY or READY_TO_DISPATCH
+        // - if bad request: queue error response + set st.phase = SENDING_RESPONSE, return false
+			return; //need more data or we already have an error
+	}
+
+	if (st.phase == ClientState::READING_BODY)
+	{
+		// tryReadBody:
+        // - if chunked: feed st.recvBuffer into st.chunkDec, append decoded to st.bodyBuffer
+        // - if content-length: append recvBuffer to bodyBuffer
+        // - enforce maxBodyAllowed
+        // - when finished: set st.phase = READY_TO_DISPATCH
+        // - on error (413, 400...): queue error response, st.phase=SENDING_RESPONSE, return false
+		if (!tryReadBody(fd, st))
+			return ; // need more data or we already have an error
+	}
+	if (st.phase == ClientState::READY_TO_DISPATCH)
+	{
+		finalizeRequestAndQueueReponse(fd, st);
+		        // finalizeRequestAndQueueResponse() should:
+        // - build & queue Response
+        // - set st.phase = SENDING_RESPONSE
+        // - maybe prep keep-alive state
+	}
+
 }
 
 void SocketManager::handleClientRead(int fd)
@@ -953,9 +1018,9 @@ void SocketManager::handleClientWrite(int fd)
 void SocketManager::handleClientDisconnect(int fd)
 {
 	std::cout << "Disconnecting fd " << fd << std::endl;
-	close(fd);
+	::close(fd);
 	m_clientBuffers.erase(fd);
-	m_clientWriteBuffers.erase(fd);
+	m_clientWriteBuffers.erase(fd); //will go away
 	m_clientToServerIndex.erase(fd);
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
@@ -965,10 +1030,13 @@ void SocketManager::handleClientDisconnect(int fd)
 			break ; 
 		}
 	}
+	//old legacy code, will go away now that that we do per ClientState
 	m_headersDone.erase(fd);
 	m_expectedContentLen.erase(fd);
 	m_allowedMaxBody.erase(fd);
 	m_isChunked.erase(fd);
+
+	m_clients.erase(fd);
 }
 
 static std::string getStatusMessage(int code)
