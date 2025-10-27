@@ -191,7 +191,17 @@ void ChunkedDecoder::handleTrailersState(const char *buf, size_t len, size_t &i)
 			&& m_line[m_line.size() - 2] == '\r'
 			&& m_line[m_line.size() - 1] == '\n')
 		{
+			std::string line_no_crlf = m_line.substr(0, m_line.size() - 2);
+			m_line.clear();
 
+			//if line_no_crlf is empty, its the end of the chunk ! we done
+			if (line_no_crlf.size() == 0)
+			{
+				m_state = S_DONE;
+				break ;
+			}
+			// else: it's just a trailer header (e.g. "Checksum: deadbeef")
+			// ignore it and keep looping to read more trailers
 		}
 	}
 }

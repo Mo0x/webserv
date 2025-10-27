@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/19 19:33:24 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/25 20:38:38 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -506,9 +506,7 @@ bool SocketManager::processFirstTimeHeaders(int fd, const Request &req,
         res.headers["Content-Type"] = "text/html; charset=utf-8";
         res.body = "<h1>405 Method Not Allowed</h1>";
         res.headers["Content-Length"] = to_string(res.body.length());
-        const bool body_expected = (methodUpper == "POST" || methodUpper == "PUT");
-        const bool body_fully_consumed = false;
-        finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
+        finalizeAndQueue(fd, res);
         return false;
     }
 
@@ -526,9 +524,7 @@ bool SocketManager::processFirstTimeHeaders(int fd, const Request &req,
         res.headers["Content-Type"] = "text/html; charset=utf-8";
         res.body = "<h1>411 Length Required</h1>";
         res.headers["Content-Length"] = to_string(res.body.length());
-        const bool body_expected = true;
-        const bool body_fully_consumed = true; // no body to read
-        finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
+        finalizeAndQueue(fd, res);
         return false;
     }
 
@@ -563,13 +559,11 @@ bool SocketManager::processFirstTimeHeaders(int fd, const Request &req,
                 res.headers["Content-Length"] = to_string(res.body.length());
 
                 // No body is (or will be) consumed here.
-                const bool body_expected       = true;
-                const bool body_fully_consumed = false;
                 std::cerr << "[EXPECT] 417 on fd " << fd
                           << " http=" << req.http_version
                           << " expect='" << itExp->second << "'\n";
 
-                finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
+                finalizeAndQueue(fd, res);
                 return false; // stop processing this request
             }
             // (If value empty, fall through and ignore — extremely unlikely in practice.)
@@ -743,6 +737,89 @@ void SocketManager::resetRequestState(int fd)
     m_isChunked[fd] = false;
 }
 
+/*----------------------------HERE IS THE NEW HANDLECLIENTTEAD v3 refactorised ------------------------------------------------
+	Inside handleClientRead(fd) now:
+	Step 0. If we already have something queued to write to that client (found in m_clientWriteBuffers[fd]), we bail early and DO NOT read more.
+	→ So we are "1 request at a time per connection" and we don't pipeline.
+	Step 1. readIntoClientBuffer(fd)
+	nonblocking recv into m_clientBuffers[fd].
+	handles disconnect (0 bytes or fatal error) by calling handleClientDisconnect(fd).
+
+	Step 2. Header handling
+	locateHeaders: find \r\n\r\n. Also enforces an in-progress header size cap (32KB) and if you exceed it before headers complete, you immediately queue 431 + close.
+	Once headers are found:
+	enforceHeaderLimits:
+	total header block size limit (32KB)
+	per-line max (8KB)
+	total number of header lines (<=100)
+	rejects multiple Content-Length headers
+	rejects CL+TE together
+	→ On violation: we build an error Response, mark close_connection, queue it via finalizeAndQueue(), and stop.
+
+	Step 3. Parse the request
+	parseAndValidateRequest:
+	parses request line + headers into Request.
+	normalizes header keys to lowercase.
+	looks up which ServerConfig applies to this fd using findServerForClient(fd) (so virtualhost-ish mapping).
+	checks Content-Length:
+	only digits
+	overflow safe
+	1 CL -> 400
+	CL+TE -> 400
+	checks Transfer-Encoding:
+	only allows exactly chunked. Anything else → 400.
+	enforces server-wide client_max_body_size if it's NOT chunked and CL is too large → 413.
+	If mapping server fails, we 400 and close.
+
+	Step 4. First-time header-side policy for this FD
+	processFirstTimeHeaders:
+	Runs only once per new request (gated by m_headersDone[fd]).
+	figures out which location/RouteConfig we're under (via findMatchingLocation), and records:
+	per-route/per-server max_body_size into m_allowedMaxBody[fd]
+	expected body length in m_expectedContentLen[fd]
+	whether request is chunked in m_isChunked[fd]
+	Enforces 405 Method Not Allowed EARLY if method not in route’s allowed list.
+	-> Builds a 405 with an Allow: header, queues it, stops.
+	Enforces 411 Length Required:
+	if method is POST or PUT, and there's neither CL nor chunked, respond 411.
+	Enforces Expect: header:
+	If HTTP/1.1 and Expect: present and it's anything (including 100-continue), we currently send 417 Expectation Failed and stop.
+
+	Step 5. Body readiness
+	ensureBodyReady:
+	figures out how many body bytes we already have after the header.
+	live-stream check against m_allowedMaxBody[fd] → if exceeded, send 413 and close.
+	if we advertised a Content-Length, makes sure we didn't already read more than that → 400 and close.
+	waits until we actually received the full body:
+	if CL given: require full CL bytes in buffer.
+	if chunked: require to see the terminator "0\r\n\r\n" (temporary logic).
+	If body not complete yet: just return and wait for more POLLIN.
+	If body is complete, it returns requestEnd = end index of this full request in the buffer.
+
+	Step 6. Dispatch
+	dispatchRequest does:
+	routing logic (root / index / autoindex / redirect)
+	path traversal protection (isPathSafe)
+	301 redirect if dir missing trailing slash
+	200 static file or autoindex listing, etc.
+	403, 404, 200, etc
+	For HEAD, it clears the body before queueing.
+	Calls finalizeAndQueue() with flags like body_expected/body_fully_consumed.
+
+	Step 7. After dispatch
+	We slice the processed request out of m_clientBuffers[fd] using erase(0, requestEnd) so leftover bytes remain in buffer (→ this is how we start to support multiple requests on the same TCP connection, sequentially).
+	Then resetRequestState(fd) resets m_headersDone, body tracking, etc.
+	So: this is now a full HTTP/1.1-ish state machine with:
+	header caps + per-line caps
+	CL overflow safety
+	Content-Length vs. Transfer-Encoding correctness
+	body size enforcement (server/global + route override)
+	early 405/411/413/417 decisions
+	support for POST and PUT with bodies
+	preliminary chunked support (terminator check)
+	keep-alive style pipelining of sequential requests on one connection
+*/
+
 void SocketManager::handleClientRead(int fd)
 {
     std::map<int, std::string>::const_iterator pending = m_clientWriteBuffers.find(fd);
@@ -783,61 +860,6 @@ void SocketManager::handleClientRead(int fd)
 
     resetRequestState(fd);
 }
-//previous handleClientRead() without rooting logic
-
-/* void SocketManager::handleClientRead(int fd)
-{
-	char buffer[1024];
-	int bytes = recv(fd, buffer, sizeof(buffer), 0);
-	if (bytes <= 0)
-	{
-		handleClientDisconnect(fd);
-		return ;
-	}
-	m_clientBuffers[fd].append(buffer, bytes);
-
-	// Wait for full HTTP request (simplified, assumes no body)
-	if (m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
-		return ;
-
-	Request req = parseRequest(m_clientBuffers[fd]);
-	const ServerConfig& server = m_serversConfig[m_clientToServerIndex[fd]]; 
-	std::string filePath = (req.path == "/") ? "/index.html" : req.path;
-	std::string basePath = "./www";
-	std::string fullPath = basePath + filePath;
-
-	std::string response;
-
-	if (!isPathSafe(basePath, fullPath)) {
-		response = buildErrorResponse(403, server);
-	}
-	else if (!fileExists(fullPath)) {
-		response = buildErrorResponse(404, server);
-	}
-	else {
-		std::string body = readFile(fullPath);
-		Response res;
-		res.status_code = 200;
-		res.status_message = "OK";
-		res.body = body;
-		res.headers["Content-Type"] = "text/html";
-		res.headers["Content-Length"] = to_string(body.length());
-		res.close_connection = true;
-		response = build_http_response(res);
-	}
-
-	m_clientWriteBuffers[fd] = response;
-
-	// Update pollfd to POLLOUT so we can send the response
-	for (size_t i = 0; i < m_pollfds.size(); ++i)
-	{
-		if (m_pollfds[i].fd == fd)
-		{
-			m_pollfds[i].events = POLLOUT;
-			break;
-		}
-	}
-} */
 
 void SocketManager::handleClientWrite(int fd)
 {

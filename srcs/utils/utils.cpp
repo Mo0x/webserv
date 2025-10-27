@@ -21,30 +21,73 @@ bool isPathPrefix(const std::string& path, const std::string& prefix) {
 	return path[prefix.length()] == '/';
 }
 
-/* Give this longest prefix IE: location /upload is taken vs location /*/
+/* version 2.0 of the routing logic because request with route like "/upload" werent 
+matchin our /upload/ creating the helper matchOnePass for it*/
 
-const RouteConfig* findMatchingLocation(const ServerConfig& server, const std::string& path) {
-	const RouteConfig* bestMatch = NULL;
-	size_t bestLength = 0;
-
-	for (size_t i = 0; i < server.routes.size(); ++i) {
-		const RouteConfig& route = server.routes[i];
-		const std::string& locPath = route.path;
-
-		if (path.compare(0, locPath.size(), locPath) == 0) {
-			bool exact = path.size() == locPath.size();
-			bool nextCharIsSlash = path.size() > locPath.size() && path[locPath.size()] == '/';
-			bool locEndsWithSlash = !locPath.empty() && locPath[locPath.size() - 1] == '/';
-
-			if (exact || nextCharIsSlash || locEndsWithSlash) {
-				if (locPath.size() > bestLength) {
-					bestLength = locPath.size();
-					bestMatch = &route;
-				}
+static const RouteConfig* matchOnePass(const ServerConfig &server, const std::string &reqPath)
+{
+	const RouteConfig *best_match = NULL;
+	size_t best_length = 0;
+	for (size_t i = 0; i < server.routes.size(); i++)
+	{
+		const RouteConfig &route = server.routes[i];
+		const std::string &locPath = route.path;
+		// prefix must be shared E.G does this request path start with locPath ? if not skip it
+		if (reqPath.compare(0, locPath.size(), locPath) != 0)
+			continue;
+		/*here we check
+		1. is the request path the same lenght as location path? I.e "/upload" with "/upload"
+		2. if request path is stricly longer than locPath AND it ends with '/'?
+		3. Does the location itself ends with '/'?
+		*/
+		bool exact = reqPath.size() == locPath.size();
+		bool isNextSlash = (reqPath.size() > locPath.size() && reqPath[locPath.size()] == '/');
+		bool locEndsWithSlash = (!locPath.empty() && locPath[locPath.size() - 1] == '/');
+		if (exact || isNextSlash || locEndsWithSlash)
+		{
+			if (locPath.size() > best_length)
+			{
+				best_length = locPath.size();
+				best_match = &route;
 			}
 		}
 	}
-	return bestMatch;
+	if (best_match)
+        std::cout << "  [matchOnePass \"" << reqPath << "\"] -> " << best_match->path << std::endl;
+    else
+	{
+        std::cout << "  [matchOnePass \"" << reqPath << "\"] -> (none)" << std::endl;
+	}
+	return best_match;
+}
+
+const RouteConfig* findMatchingLocation(const ServerConfig& server, const std::string& path)
+{
+	// first path we try exact as-is
+	const RouteConfig *bestNormal = matchOnePass(server, path);
+	const RouteConfig *bestWithSlash = NULL;
+	if (!path.empty()  && path[path.size() - 1] != '/')
+	{
+		std::string alt = path;
+		alt += '/';
+		bestWithSlash = matchOnePass(server, alt);
+	}
+	if (bestNormal && !bestWithSlash)
+	{
+		std::cout << "Best MATCH" << bestNormal->path << std::endl;
+		return bestNormal;
+	}
+	if (!bestNormal && bestWithSlash)
+		return bestWithSlash;
+	if (bestNormal && bestWithSlash)
+	{
+		//we prefer longer and more specific one
+		if (bestWithSlash->path.size() > bestNormal->path.size())
+			return bestWithSlash;
+		else
+			return bestNormal;
+	}
+	return NULL;
 }
 
 /* THIS WORKS ON UNIX BUT NOT MAC BECAUSE IN THAT CASE d_type is alway UNKNOWN*/
@@ -220,7 +263,7 @@ void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs)
 	hdrs.swap(lower);
 }
 
-
+//lil helper for big boi std_to_hex
 
 static int hex_value(char c)
 {
