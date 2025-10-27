@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/27 19:04:40 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/10/27 19:43:19 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -30,19 +30,28 @@ struct ClientState
 	{
 		READING_HEADERS,
 		READING_BODY,
-		READTY_TO_DISPATCH,
+		READY_TO_DISPATCH,
 		SENDING_RESPONSE,
 		CLOSED
 	};
 
 	Phase			phase;
+
+	// raw bytes undread from socket
 	std::string		recvBuffer;
+
+	// parsed request line + header
 	Request			req;
+	
+	// Body framing
 	bool			isChunked;
-	size_t			contentLenght;
+	size_t			contentLength;
 	size_t			maxBodyAllowed;
 
+	//decoded body (for post, cgi stdin, uploads)
 	std::string		bodyBuffer;
+
+	//our decoder stated when TE: chunked
 	ChunkedDecoder	chunkDec;
 };
 
@@ -119,6 +128,7 @@ class SocketManager
 							const ServerConfig &server,
 							const std::string &methodUpper);
 	void resetRequestState(int fd);
+	bool clientHasPendingWrite(int fd) const;
 };
 
 #endif
