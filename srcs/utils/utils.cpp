@@ -52,12 +52,6 @@ static const RouteConfig* matchOnePass(const ServerConfig &server, const std::st
 			}
 		}
 	}
-	if (best_match)
-        std::cout << "  [matchOnePass \"" << reqPath << "\"] -> " << best_match->path << std::endl;
-    else
-	{
-        std::cout << "  [matchOnePass \"" << reqPath << "\"] -> (none)" << std::endl;
-	}
 	return best_match;
 }
 
@@ -74,7 +68,6 @@ const RouteConfig* findMatchingLocation(const ServerConfig& server, const std::s
 	}
 	if (bestNormal && !bestWithSlash)
 	{
-		std::cout << "Best MATCH" << bestNormal->path << std::endl;
 		return bestNormal;
 	}
 	if (!bestNormal && bestWithSlash)
