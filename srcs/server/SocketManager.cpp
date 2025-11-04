@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/27 20:52:45 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/04 16:08:49 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -192,7 +192,7 @@ void SocketManager::clearPollout(int fd)
 	}
 }
 
-static Response makeHtmlError(int code, const std::string& reason, const std::string& html)
+Response SocketManager::makeHtmlError(int code, const std::string& reason, const std::string& html)
 {
 
 	Response r;
@@ -857,6 +857,8 @@ bool SocketManager::clientHasPendingWrite(int fd) const
 	std::map<int, std::string>::const_iterator it = m_clientWriteBuffers.find(fd);
 		return (it != m_clientWriteBuffers.end() && !it->second.empty());
 }
+
+
 
 void SocketManager::handleClientRead(int fd)
 {

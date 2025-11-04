@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/27 20:03:14 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/04 16:51:47 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -132,6 +132,13 @@ class SocketManager
 							const std::string &methodUpper);
 	void resetRequestState(int fd);
 	bool clientHasPendingWrite(int fd) const;
+
+	bool tryParseHeader(int fd, ClientState &st);
+	bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
+	Response makeHtmlError(int code, const std::string& reason, const std::string& html);
+	bool parseRawHeadersIntoRequest(int fd, ClientState &st, size_t hdrEndPos);
+	bool badRequestAndQueue(int fd, ClientState &st);
+
 };
 
 #endif
