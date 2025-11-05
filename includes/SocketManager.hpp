@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/05 16:09:14 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/05 17:34:17 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -140,6 +140,8 @@ class SocketManager
 	bool applyRoutePolicyAfterHeaders(int fd, ClientState &st);
 	bool badRequestAndQueue(int fd, ClientState &st);
 	bool setupBodyFramingAndLimits(int fd, ClientState &st);
+	void finalizeHeaderPhaseTransition (ClientState &st, size_t hdrEndPos);
+	bool tryReadBody(int fd, ClientState &st);
 
 };
 

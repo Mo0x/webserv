@@ -138,6 +138,55 @@ static void splitCsvLower(const std::string &s, std::vector<std::string> &out)
 	if (!cur.empty()) out.push_back(cur);
 }
 
+/**
+ * parseSizeT
+ *
+ * Purpose:
+ *   Parse a non-negative, decimal ASCII integer into a size_t, rejecting anything
+ *   that is ambiguous, malformed, or would overflow size_t on this platform.
+ *
+ * Accepted input:
+ *   - One or more digits '0'..'9'
+ *   - No leading/trailing spaces or tabs
+ *   - No sign ('+' or '-') and no base prefixes ('0x', etc.)
+ *
+ * Behavior:
+ *   - On success: writes the value into `out` and returns true.
+ *   - On failure: leaves `out` unspecified and returns false.
+ *
+ * Overflow handling (the “black magic” preprocessor bit):
+ *   - We accumulate into an unsigned long long (`v`) to have as much headroom
+ *     as possible while multiplying by 10 and adding the next digit.
+ *   - To detect overflow *portably* without compiler builtins, we compare `v`
+ *     against the maximum representable value of `size_t`.
+ *   - Unfortunately, there is no standard macro for “max size_t as ULL literal”
+ *     in C++98, so we do a conservative check guarded by a preprocessor test:
+ *
+ *       #if ULONG_MAX == 18446744073709551615ULL
+ *           if (v > (unsigned long long) (~(size_t)0)) return false;
+ *       #endif
+ *
+ *     Explanation:
+ *       - On typical LP64 platforms (Linux/macOS x86_64), `unsigned long` is 64-bit,
+ *         so `ULONG_MAX` equals 2^64 - 1, which *also* implies `size_t` is 64-bit.
+ *         In that case, we can safely compare `v` to the all-ones bit pattern for size_t,
+ *         i.e. `~(size_t)0`. If `v` exceeds that, parsing would overflow `size_t` → reject.
+ *       - On 32-bit targets (or other ABIs where `size_t` isn’t 64-bit), this branch
+ *         is *not* compiled. That avoids making incorrect assumptions about the width
+ *         of `size_t` (and keeps the code C++98-portable).
+ *       - Why not use SIZE_MAX? It’s from C99’s <stdint.h>/<cstdint> and not guaranteed
+ *         in strict C++98 environments; the above check stays compatible.
+ *
+ * Edge cases:
+ *   - Empty string → false
+ *   - Any non-digit character → false
+ *   - Very large sequences of digits that don’t fit in size_t → false (caught by check)
+ *   - “000123” is accepted (normal decimal semantics)
+ *
+ * Complexity:
+ *   - O(n) over the number of characters; no allocations.
+ */
+
 static bool parseSizeT(const std::string &s, size_t &out)
 {
 	// Decimal non-negative; reject leading +/-, hex, spaces.
@@ -315,54 +364,7 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 
 }
 
-/**
- * parseSizeT
- *
- * Purpose:
- *   Parse a non-negative, decimal ASCII integer into a size_t, rejecting anything
- *   that is ambiguous, malformed, or would overflow size_t on this platform.
- *
- * Accepted input:
- *   - One or more digits '0'..'9'
- *   - No leading/trailing spaces or tabs
- *   - No sign ('+' or '-') and no base prefixes ('0x', etc.)
- *
- * Behavior:
- *   - On success: writes the value into `out` and returns true.
- *   - On failure: leaves `out` unspecified and returns false.
- *
- * Overflow handling (the “black magic” preprocessor bit):
- *   - We accumulate into an unsigned long long (`v`) to have as much headroom
- *     as possible while multiplying by 10 and adding the next digit.
- *   - To detect overflow *portably* without compiler builtins, we compare `v`
- *     against the maximum representable value of `size_t`.
- *   - Unfortunately, there is no standard macro for “max size_t as ULL literal”
- *     in C++98, so we do a conservative check guarded by a preprocessor test:
- *
- *       #if ULONG_MAX == 18446744073709551615ULL
- *           if (v > (unsigned long long) (~(size_t)0)) return false;
- *       #endif
- *
- *     Explanation:
- *       - On typical LP64 platforms (Linux/macOS x86_64), `unsigned long` is 64-bit,
- *         so `ULONG_MAX` equals 2^64 - 1, which *also* implies `size_t` is 64-bit.
- *         In that case, we can safely compare `v` to the all-ones bit pattern for size_t,
- *         i.e. `~(size_t)0`. If `v` exceeds that, parsing would overflow `size_t` → reject.
- *       - On 32-bit targets (or other ABIs where `size_t` isn’t 64-bit), this branch
- *         is *not* compiled. That avoids making incorrect assumptions about the width
- *         of `size_t` (and keeps the code C++98-portable).
- *       - Why not use SIZE_MAX? It’s from C99’s <stdint.h>/<cstdint> and not guaranteed
- *         in strict C++98 environments; the above check stays compatible.
- *
- * Edge cases:
- *   - Empty string → false
- *   - Any non-digit character → false
- *   - Very large sequences of digits that don’t fit in size_t → false (caught by check)
- *   - “000123” is accepted (normal decimal semantics)
- *
- * Complexity:
- *   - O(n) over the number of characters; no allocations.
- */
+
 
 bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 {
@@ -466,12 +468,70 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 	st.contentLength = 0;
 	return true;
 }
+// Headers are fully parsed; prepare for body phase or dispatch.
+
+void SocketManager::finalizeHeaderPhaseTransition (ClientState &st, size_t hdrEndPos)
+{
+	// 1) Drop the header block from the recv buffer (leave any coalesced body/pipelined data)
+	if (hdrEndPos > st.recvBuffer.size())
+		hdrEndPos = st.recvBuffer.size(); // defensive
+	st.recvBuffer.erase(0, hdrEndPos);
+	// 2) Decide the next phase + optionally move already-received body bytes (CL case)
+	if (st.isChunked)
+	{
+		// For chunked, we don't pre-consume here. The chunk decoder will
+		// pull from st.recvBuffer during tryReadBody.
+		st.phase = ClientState::READING_BODY;
+		return;
+	}
+
+	// Non-chunked framing
+	if (st.contentLength > 0)
+	{
+		// How many bytes of the body are already in the recv buffer?
+		size_t have = st.recvBuffer.size();
+		size_t need = st.contentLength - st.bodyBuffer.size();
+
+		if (have == 0)
+		{
+			// No body bytes coalesced yet — switch to body phase and wait for more
+			st.phase = ClientState::READING_BODY;
+			return;
+		}
+
+		// Move as much as we need from recvBuffer -> bodyBuffer
+		size_t take = (have < need) ? have : need;
+		if (take > 0)
+		{
+			st.bodyBuffer.append(st.recvBuffer.data(), take);
+			st.recvBuffer.erase(0, take);
+		}
+
+		// If we finished the body right away, we may already have pipelined data
+		if (st.bodyBuffer.size() >= st.contentLength)
+		{
+			// Body complete -> ready to dispatch immediately.
+			// Any surplus left in st.recvBuffer is the start of the next request (HTTP pipelining).
+			st.phase = ClientState::READY_TO_DISPATCH;
+		}
+		else
+		{
+			// Still need more body bytes
+			st.phase = ClientState::READING_BODY;
+		}
+	}
+	else
+	{
+		// No body expected (no TE and no CL) — dispatch immediately
+		st.phase = ClientState::READY_TO_DISPATCH;
+	}
+}
 
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 {
 	// 1) do we have header yet
 	size_t hdrEndPos; 
-	if (!findHeaderBoundary(st, hdrEndPos))
+	if (findHeaderBoundary(st, hdrEndPos))
 		return true;
 	// 2) check header sanity /size limits
 	if (!checkHeaderLimits(fd, st, hdrEndPos))
@@ -484,6 +544,7 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 		return false;
 	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
+	finalizeHeaderPhaseTransition(st, hdrEndPos);
 	// 4..6) applyRoutePolicyAfterHeaders, setupBodyFramingAndLimits,
 	//       finalizeHeaderPhaseTransition
 	// (call them in order; return false only if you queued an error)

@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/04 16:08:49 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/05 17:32:31 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -858,7 +858,119 @@ bool SocketManager::clientHasPendingWrite(int fd) const
 		return (it != m_clientWriteBuffers.end() && !it->second.empty());
 }
 
+// Returns true only when the request body is fully read and st.phase is set to READY_TO_DISPATCH.
+// Returns false when we need more data OR when an error response was queued (SENDING_RESPONSE).
+bool SocketManager::tryReadBody(int fd, ClientState &st)
+{
+	// --- CHUNKED TRANSFER ---------------------------------------------------
+	if (st.isChunked)
+	{
+		while (!st.recvBuffer.empty())
+		{
+			// Feed current buffer slice to the chunk decoder
+			size_t consumed = 0;
+			std::string produced;
 
+			// TODO: adapt this call to your actual ChunkedDecoder API
+			// Expected behavior:
+			//  - append decoded bytes for completed chunks into `produced`
+			//  - set `consumed` to how many bytes were read from input
+			//  - return a status enum: OK (need more), DONE, or ERROR
+			ChunkedDecoder::Status status =
+				st.chunkDec.feed(st.recvBuffer.data(),
+				                 st.recvBuffer.size(),
+				                 produced,
+				                 consumed);
+
+			// Append newly decoded bytes to the body
+			if (!produced.empty())
+			{
+				st.bodyBuffer.append(produced);
+				// enforce streaming cap for chunked
+				if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+				{
+					Response err = makeHtmlError(413, "Payload Too Large",
+						"<h1>413 Payload Too Large</h1>");
+					finalizeAndQueue(fd, err);
+					st.phase = ClientState::SENDING_RESPONSE;
+					return false;
+				}
+			}
+
+			// Drop consumed bytes from recvBuffer
+			if (consumed > 0)
+				st.recvBuffer.erase(0, consumed);
+
+			// State checks
+			if (status == ChunkedDecoder::S_ERROR)
+			{
+				Response err = makeHtmlError(400, "Bad Request",
+					"<h1>400 Bad Request</h1><p>Malformed chunked body.</p>");
+				finalizeAndQueue(fd, err);
+				st.phase = ClientState::SENDING_RESPONSE;
+				return false;
+			}
+			if (status == ChunkedDecoder::S_DONE)
+			{
+				// Done decoding the body; any surplus in recvBuffer is the next request (pipelining)
+				st.phase = ClientState::READY_TO_DISPATCH;
+				return true;
+			}
+
+			// If decoder didn’t consume anything, we need more bytes from the socket
+			if (consumed == 0 && produced.empty())
+				return false;
+		}
+
+		// recvBuffer drained but decoder still needs more input
+		return false;
+	}
+
+	// --- CONTENT-LENGTH -----------------------------------------------------
+	// No chunked TE: read exactly st.contentLength bytes into bodyBuffer
+	const size_t want = st.contentLength;
+	const size_t haveNow = st.bodyBuffer.size();
+
+	if (want <= haveNow)
+	{
+		// Already complete (shouldn't generally happen here, but be defensive)
+		st.phase = ClientState::READY_TO_DISPATCH;
+		return true;
+	}
+
+	if (!st.recvBuffer.empty())
+	{
+		size_t need = want - haveNow;
+		size_t take = st.recvBuffer.size() < need ? st.recvBuffer.size() : need;
+
+		if (take > 0)
+		{
+			st.bodyBuffer.append(st.recvBuffer.data(), take);
+			st.recvBuffer.erase(0, take);
+
+			// Enforce cap in CL mode (early 413 should have run already, this is a safety net)
+			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+			{
+				Response err = makeHtmlError(413, "Payload Too Large",
+					"<h1>413 Payload Too Large</h1>");
+				finalizeAndQueue(fd, err);
+				st.phase = ClientState::SENDING_RESPONSE;
+				return false;
+			}
+		}
+	}
+
+	// Check completion
+	if (st.bodyBuffer.size() >= want)
+	{
+		// Body complete — any remaining st.recvBuffer is pipelined next request
+		st.phase = ClientState::READY_TO_DISPATCH;
+		return true;
+	}
+
+	// Need more bytes
+	return false;
+}
 
 void SocketManager::handleClientRead(int fd)
 {
@@ -905,7 +1017,7 @@ void SocketManager::handleClientRead(int fd)
 	}
 	if (st.phase == ClientState::READY_TO_DISPATCH)
 	{
-		finalizeRequestAndQueueReponse(fd, st);
+		finalizeRequestAndQueueResponse(fd, st);
 		        // finalizeRequestAndQueueResponse() should:
         // - build & queue Response
         // - set st.phase = SENDING_RESPONSE
