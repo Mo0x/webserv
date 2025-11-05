@@ -113,6 +113,53 @@ bool SocketManager::badRequestAndQueue(int fd, ClientState &st)
 	return false;
 }
 
+// Split on comma into trimmed, lowercased tokens (drop empties)
+static void splitCsvLower(const std::string &s, std::vector<std::string> &out)
+{
+	out.clear();
+	std::string cur;
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		char c = s[i];
+		if (c == ',')
+		{
+			trim(cur);
+			toLowerInPlace(cur);
+			if (!cur.empty()) out.push_back(cur);
+			cur.clear();
+		}
+		else
+		{
+			cur.push_back(c);
+		}
+	}
+	trim(cur);
+	toLowerInPlace(cur);
+	if (!cur.empty()) out.push_back(cur);
+}
+
+static bool parseSizeT(const std::string &s, size_t &out)
+{
+	// Decimal non-negative; reject leading +/-, hex, spaces.
+	if (s.empty())
+		return false;
+	unsigned long long v = 0ULL;
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		unsigned char c = static_cast<unsigned char>(s[i]);
+		if (c < '0' || c > '9')
+			return false;
+		v = v * 10ULL + static_cast<unsigned long long>(c - '0');
+		// clamp to size_t range
+#if ULONG_MAX == 18446744073709551615ULL
+		if (v > static_cast<unsigned long long>(~static_cast<size_t>(0)))
+			return false;
+#endif
+	}
+	out = static_cast<size_t>(v);
+	return true;
+}
+
 bool SocketManager::parseRawHeadersIntoRequest(int fd, ClientState &st, size_t hdrEndPos)
 {
 	// we extract just the header
@@ -146,20 +193,12 @@ bool SocketManager::parseRawHeadersIntoRequest(int fd, ClientState &st, size_t h
 	if (method.empty() || target.empty() || version.empty())
 		return badRequestAndQueue(fd, st);
 
-	// Normalize method to uppercase (ASCII)
-	for (size_t i = 0; i < method.size(); ++i)
-	{
-		unsigned char c = static_cast<unsigned char>(method[i]);
-		if (c >= 'a' && c <= 'z')
-			method[i] = static_cast<char>(c - 'a' + 'A');
-	}
-
 	// Accept only HTTP/1.0 or HTTP/1.1 here (keep it simple)
 	if (!(version == "HTTP/1.1" || version == "HTTP/1.0"))
 		return badRequestAndQueue(fd, st);
 
 	// Store into st.req (adjust field names to your Request type)
-	st.req.method = method;
+	st.req.method = toUpperCopy(method);
 	st.req.path = target;      // or st.req.uri
 	st.req.http_version = version;
 
@@ -211,7 +250,224 @@ bool SocketManager::parseRawHeadersIntoRequest(int fd, ClientState &st, size_t h
 
 }
 
-bool SocketManager::tryParseHeader(int fd, ClientState &st)
+bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
+{
+	// 1)we grab the active server and the matching route
+	const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+	const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
+	// 2) Resovlve max body allowance 
+	{
+		size_t allowed = 0;
+		if (route && route->max_body_size > 0)
+			allowed = route->max_body_size;
+		else if (server.client_max_body_size > 0)
+			allowed = server.client_max_body_size;
+		st.maxBodyAllowed = allowed;
+	}
+	//3) early 405 check
+
+	if (route && !route->allowed_methods.empty())
+	{
+		if (!isMethodAllowedForRoute(st.req.method, route->allowed_methods))
+		{
+			std::set<std::string> allowSet = normalizeAllowedForAllowHeader(route->allowed_methods);
+			std::string allowHeader = joinAllowedMethods(allowSet);
+
+			Response res;
+			res.status_code = 405;
+			res.status_message = "Method Not Allowed";
+			res.headers["Allow"] = allowHeader;
+			res.headers["Content-Type"] = "text/html; charset=utf-8";
+			res.body = "<h1>405 Method Not Allowed</h1>";
+			res.headers["Content-Length"] = to_string(res.body.length());
+			res.close_connection = false;
+
+			finalizeAndQueue(fd, res);
+			st.phase = ClientState::SENDING_RESPONSE;
+			return false;
+		}
+	}
+	//4) redirect
+	if (route && !route->redirect.empty())
+	{
+		Response redir;
+		redir.status_code = 301; // you can switch to 302/307/308 later if you extend config
+		redir.status_message = "Moved Permanently";
+		redir.headers["Location"] = route->redirect;
+		redir.headers["Content-Type"] = "text/html; charset=utf-8";
+		redir.body = "<h1>Moved</h1>";
+		redir.headers["Content-Length"] = to_string(redir.body.length());
+		redir.close_connection = false;
+
+		finalizeAndQueue(fd, redir);
+		st.phase = ClientState::SENDING_RESPONSE;
+		return false;
+	}
+	//5) If you consider "no route" an error here (older code fell back to server root),
+	//    you can keep going and let the dispatcher handle 404. Otherwise, short-circuit now:
+	// if (!route) {
+	//     Response err = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1>");
+	//     finalizeAndQueue(fd, err);
+	//     st.phase = ClientState::SENDING_RESPONSE;
+	//     return false;
+	// }
+	return true;
+
+}
+
+/**
+ * parseSizeT
+ *
+ * Purpose:
+ *   Parse a non-negative, decimal ASCII integer into a size_t, rejecting anything
+ *   that is ambiguous, malformed, or would overflow size_t on this platform.
+ *
+ * Accepted input:
+ *   - One or more digits '0'..'9'
+ *   - No leading/trailing spaces or tabs
+ *   - No sign ('+' or '-') and no base prefixes ('0x', etc.)
+ *
+ * Behavior:
+ *   - On success: writes the value into `out` and returns true.
+ *   - On failure: leaves `out` unspecified and returns false.
+ *
+ * Overflow handling (the “black magic” preprocessor bit):
+ *   - We accumulate into an unsigned long long (`v`) to have as much headroom
+ *     as possible while multiplying by 10 and adding the next digit.
+ *   - To detect overflow *portably* without compiler builtins, we compare `v`
+ *     against the maximum representable value of `size_t`.
+ *   - Unfortunately, there is no standard macro for “max size_t as ULL literal”
+ *     in C++98, so we do a conservative check guarded by a preprocessor test:
+ *
+ *       #if ULONG_MAX == 18446744073709551615ULL
+ *           if (v > (unsigned long long) (~(size_t)0)) return false;
+ *       #endif
+ *
+ *     Explanation:
+ *       - On typical LP64 platforms (Linux/macOS x86_64), `unsigned long` is 64-bit,
+ *         so `ULONG_MAX` equals 2^64 - 1, which *also* implies `size_t` is 64-bit.
+ *         In that case, we can safely compare `v` to the all-ones bit pattern for size_t,
+ *         i.e. `~(size_t)0`. If `v` exceeds that, parsing would overflow `size_t` → reject.
+ *       - On 32-bit targets (or other ABIs where `size_t` isn’t 64-bit), this branch
+ *         is *not* compiled. That avoids making incorrect assumptions about the width
+ *         of `size_t` (and keeps the code C++98-portable).
+ *       - Why not use SIZE_MAX? It’s from C99’s <stdint.h>/<cstdint> and not guaranteed
+ *         in strict C++98 environments; the above check stays compatible.
+ *
+ * Edge cases:
+ *   - Empty string → false
+ *   - Any non-digit character → false
+ *   - Very large sequences of digits that don’t fit in size_t → false (caught by check)
+ *   - “000123” is accepted (normal decimal semantics)
+ *
+ * Complexity:
+ *   - O(n) over the number of characters; no allocations.
+ */
+
+bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
+{
+	st.isChunked = false;
+	st.contentLength = 0;
+
+	//fetch headers
+
+	std::map<std::string, std::string>::const_iterator itTE  = st.req.headers.find("transfer-encoding");
+	std::map<std::string, std::string>::const_iterator itCL  = st.req.headers.find("content-length");
+
+	const bool hasTE = (itTE != st.req.headers.end() && !itTE->second.empty());
+	const bool hasCL = (itCL != st.req.headers.end() && !itCL->second.empty());
+
+	//1) has in previous iteration we check if both TE and CL present if so -> 400
+	if (hasTE && hasCL)
+	{
+		Response err = makeHtmlError(400, "Bad Request",
+			"<h1>400 Bad Request</h1><p>Both Transfer-Encoding and Content-Length present.</p>");
+		finalizeAndQueue(fd, err);
+		st.phase = ClientState::SENDING_RESPONSE;
+		return false;
+	}
+	// 2) Transfer-Encoding handling (only support 'chunked')
+	if (hasTE)
+	{
+		std::vector<std::string> tokens;
+		splitCsvLower(itTE->second, tokens);
+
+		if (tokens.empty())
+		{
+			Response err = makeHtmlError(400, "Bad Request",
+				"<h1>400 Bad Request</h1><p>Empty Transfer-Encoding.</p>");
+			finalizeAndQueue(fd, err);
+			st.phase = ClientState::SENDING_RESPONSE;
+			return false;
+		}
+
+		// Only support exactly "chunked" OR ...,"chunked" as the last step.
+		// Be strict: if there are other codings (e.g., gzip), reply 501 for now.
+		if (tokens.size() == 1 && tokens[0] == "chunked")
+		{
+			st.isChunked = true;
+			// st.contentLength stays 0
+			return true; // no early 413 possible here; enforce during streaming
+		}
+
+		// Allow multiple tokens only if last is "chunked" and the rest are identity/empty?
+		// To keep it simple and safe, reject multi-codings for now.
+		{
+			Response err = makeHtmlError(501, "Not Implemented",
+				"<h1>501 Not Implemented</h1><p>Unsupported Transfer-Encoding.</p>");
+			finalizeAndQueue(fd, err);
+			st.phase = ClientState::SENDING_RESPONSE;
+			return false;
+		}
+	}
+	// 3) Content-Length handling
+	if (hasCL)
+	{
+		// If duplicates were merged by parser as "v1,v2", treat as invalid unless exactly one value.
+		std::vector<std::string> vals;
+		splitCsvLower(itCL->second, vals);
+		if (vals.size() != 1)
+		{
+			Response err = makeHtmlError(400, "Bad Request",
+				"<h1>400 Bad Request</h1><p>Multiple Content-Length values.</p>");
+			finalizeAndQueue(fd, err);
+			st.phase = ClientState::SENDING_RESPONSE;
+			return false;
+		}
+
+		// parse decimal
+		size_t cl = 0;
+		if (!parseSizeT(vals[0], cl))
+		{
+			Response err = makeHtmlError(400, "Bad Request",
+				"<h1>400 Bad Request</h1><p>Invalid Content-Length.</p>");
+			finalizeAndQueue(fd, err);
+			st.phase = ClientState::SENDING_RESPONSE;
+			return false;
+		}
+
+		st.contentLength = cl;
+
+		// 4) Early 413 if CL exceeds policy
+		if (st.maxBodyAllowed > 0 && st.contentLength > st.maxBodyAllowed)
+		{
+			Response err = makeHtmlError(413, "Payload Too Large",
+				"<h1>413 Payload Too Large</h1>");
+			finalizeAndQueue(fd, err);
+			st.phase = ClientState::SENDING_RESPONSE;
+			return false;
+		}
+
+		return true;
+	}
+
+	// 4) No TE, no CL -> no body expected (for HTTP/1.1 requests without explicit framing)
+	// We'll treat it as zero-length body; dispatcher can proceed.
+	st.contentLength = 0;
+	return true;
+}
+
+bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 {
 	// 1) do we have header yet
 	size_t hdrEndPos; 
@@ -224,7 +480,9 @@ bool SocketManager::tryParseHeader(int fd, ClientState &st)
 	// 3) Parse the request line +headers;
 	if (!parseRawHeadersIntoRequest(fd, st, hdrEndPos))
 		return false;
-	if (!applyRoutePolicyAfterHeaders(fd, st hdrEndPos))
+	if (!applyRoutePolicyAfterHeaders(fd, st))
+		return false;
+	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
 	// 4..6) applyRoutePolicyAfterHeaders, setupBodyFramingAndLimits,
 	//       finalizeHeaderPhaseTransition
