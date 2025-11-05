@@ -224,6 +224,8 @@ bool SocketManager::tryParseHeader(int fd, ClientState &st)
 	// 3) Parse the request line +headers;
 	if (!parseRawHeadersIntoRequest(fd, st, hdrEndPos))
 		return false;
+	if (!applyRoutePolicyAfterHeaders(fd, st hdrEndPos))
+		return false;
 	// 4..6) applyRoutePolicyAfterHeaders, setupBodyFramingAndLimits,
 	//       finalizeHeaderPhaseTransition
 	// (call them in order; return false only if you queued an error)
