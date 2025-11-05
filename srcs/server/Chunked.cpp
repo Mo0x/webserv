@@ -206,6 +206,20 @@ void ChunkedDecoder::handleTrailersState(const char *buf, size_t len, size_t &i)
 	}
 }
 
+void ChunkedDecoder::drainTo(std::string &dst)
+{
+	if (!m_data.empty())
+	{
+		dst.append(m_data);
+		m_data.clear();
+	}
+}
+
+bool ChunkedDecoder::hasError() const
+{
+	return m_state == S_ERROR; // uses your private enum/state
+}
+
 size_t ChunkedDecoder::feed(const char *buf, size_t len, size_t max_body_size)
 {
 	size_t i = 0; //what we will return and our incrmentor in buf

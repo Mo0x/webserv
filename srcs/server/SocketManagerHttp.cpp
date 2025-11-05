@@ -468,6 +468,22 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 	st.contentLength = 0;
 	return true;
 }
+
+static const char* phaseToStr(ClientState::Phase p)
+{
+	switch (p)
+	{
+		case ClientState::READING_HEADERS:   return "READING_HEADERS";
+		case ClientState::READING_BODY:      return "READING_BODY";
+		case ClientState::READY_TO_DISPATCH: return "READY_TO_DISPATCH";
+		case ClientState::SENDING_RESPONSE:  return "SENDING_RESPONSE";
+		case ClientState::CLOSED:            return "CLOSED";
+	}
+	return "?";
+}
+
+
+
 // Headers are fully parsed; prepare for body phase or dispatch.
 
 void SocketManager::finalizeHeaderPhaseTransition (ClientState &st, size_t hdrEndPos)
@@ -525,6 +541,9 @@ void SocketManager::finalizeHeaderPhaseTransition (ClientState &st, size_t hdrEn
 		// No body expected (no TE and no CL) — dispatch immediately
 		st.phase = ClientState::READY_TO_DISPATCH;
 	}
+	std::cerr << "[fd " << "] header->body: phase=" << phaseToStr(st.phase)
+          << " recv=" << st.recvBuffer.size()
+          << " body=" << st.bodyBuffer.size() << std::endl;
 }
 
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
@@ -533,21 +552,24 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 	size_t hdrEndPos; 
 	if (findHeaderBoundary(st, hdrEndPos))
 		return true;
+	std::cerr << "[fd " << fd << "] parsed request line + headers: "
+          << st.req.method << " " << st.req.path << " " << st.req.http_version << std::endl;
 	// 2) check header sanity /size limits
 	if (!checkHeaderLimits(fd, st, hdrEndPos))
 		return false; // we already queued an error reponse or killed the connection
-
+	std::cerr << "[fd " << fd << "] policy: maxBodyAllowed=" << st.maxBodyAllowed << std::endl;
 	// 3) Parse the request line +headers;
 	if (!parseRawHeadersIntoRequest(fd, st, hdrEndPos))
 		return false;
+	std::cerr << "[fd " << fd << "] framing: isChunked=" << (st.isChunked?1:0)
+				  << " contentLength=" << st.contentLength << std::endl;
+	
 	if (!applyRoutePolicyAfterHeaders(fd, st))
 		return false;
 	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
 	finalizeHeaderPhaseTransition(st, hdrEndPos);
-	// 4..6) applyRoutePolicyAfterHeaders, setupBodyFramingAndLimits,
-	//       finalizeHeaderPhaseTransition
-	// (call them in order; return false only if you queued an error)
+
 	return true;
 
 }

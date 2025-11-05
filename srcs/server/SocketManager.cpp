@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/05 17:32:31 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/05 18:57:37 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,6 +25,7 @@
 #include <sstream> // for std::ostringstream
 #include <cstdlib>
 #include <cerrno>
+#include <cstring> //for std::strerror
 #include <cctype>
 
 /*
@@ -134,30 +135,40 @@ bool SocketManager::isListeningSocket(int fd) const
 
 void SocketManager::handleNewConnection(int listen_fd)
 {
-	int client_fd = accept(listen_fd, NULL, NULL);
+	sockaddr_storage sa;
+	socklen_t        slen = sizeof(sa);
+
+	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&sa), &slen);
 	if (client_fd < 0)
 	{
-		perror("accept() failed");
-		return ;
+		// EAGAIN/EWOULDBLOCK is fine for nonblocking listen sockets
+		if (errno != EAGAIN && errno != EWOULDBLOCK)
+			std::cerr << "accept() failed: " << std::strerror(errno) << std::endl;
+		return;
 	}
+
+	// Make client socket nonblocking (avoid relying on external helpers)
+	int flags = fcntl(client_fd, F_GETFL, 0);
+	if (flags != -1)
+		fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+
 	std::cout << "Accepted new client: fd " << client_fd << std::endl;
-	if(fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
-	{
-		perror("fcntl(F_SETFL) failed");
-		close (client_fd);
-		return ;
-	} 
+
+	// --- Register with poll() for reads (keep your existing poll vector logic)
 	struct pollfd pdf;
 	pdf.fd = client_fd;
-	pdf.events = POLLIN;
+	pdf.events = POLLIN;     // ready for reading
 	pdf.revents = 0;
 	m_pollfds.push_back(pdf);
 
-	m_clientBuffers[client_fd] = "";
-	m_headersDone[client_fd] = false;
+	// --- Legacy per-fd maps (keep them until full migration)
+	m_clientBuffers[client_fd]      = "";
+	m_headersDone[client_fd]        = false;
 	m_expectedContentLen[client_fd] = 0;
-	m_allowedMaxBody[client_fd] = 0;
-	m_isChunked[client_fd] = false;
+	m_allowedMaxBody[client_fd]     = 0;
+	m_isChunked[client_fd]          = false;
+
+	// --- Map this client to the correct server index (reuse your existing way)
 	for (size_t i = 0; i < m_servers.size(); ++i)
 	{
 		if (m_servers[i]->getFd() == listen_fd)
@@ -166,6 +177,27 @@ void SocketManager::handleNewConnection(int listen_fd)
 			break;
 		}
 	}
+
+	// --- NEW: insert refactored per-connection state so handleClientRead() works
+	ClientState st;
+	st.phase          = ClientState::READING_HEADERS;
+	st.recvBuffer     = std::string();
+	st.bodyBuffer     = std::string();
+	st.isChunked      = false;
+	st.contentLength  = 0;
+	st.maxBodyAllowed = 0;
+	// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
+
+	m_clients[client_fd] = st;
+
+	// If you track per-fd pending-write flags/queues, clear them here to avoid
+	// the "skip read: pending write" early-return on fresh connections.
+	// e.g. m_writeQueue.erase(client_fd); or clearPendingWriteFor(client_fd);
+	// (leave as a comment if you don’t have such a structure)
+	// clearPendingWriteFor(client_fd);
+
+	// Optional: immediate trace so you’ll see the state machine start on next loop
+	std::cerr << "[fd " << client_fd << "] inserted in m_clients, phase=READING_HEADERS" << std::endl;
 }
 
 void SocketManager::setPollToWrite(int fd)
@@ -279,7 +311,7 @@ static int validateBodyFraming(const std::map<std::string, std::string> &headers
 	return 0; // means OK here
 }
 
-static void queueErrorAndClose(SocketManager &sm, int fd, int status,
+void SocketManager::queueErrorAndClose(SocketManager &sm, int fd, int status,
 							   const std::string &title,
 							   const std::string &html)
 {
@@ -867,62 +899,62 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	{
 		while (!st.recvBuffer.empty())
 		{
-			// Feed current buffer slice to the chunk decoder
-			size_t consumed = 0;
-			std::string produced;
-
-			// TODO: adapt this call to your actual ChunkedDecoder API
-			// Expected behavior:
-			//  - append decoded bytes for completed chunks into `produced`
-			//  - set `consumed` to how many bytes were read from input
-			//  - return a status enum: OK (need more), DONE, or ERROR
-			ChunkedDecoder::Status status =
+			// Feed input (returns bytes consumed)
+			const size_t consumed =
 				st.chunkDec.feed(st.recvBuffer.data(),
-				                 st.recvBuffer.size(),
-				                 produced,
-				                 consumed);
+								st.recvBuffer.size(),
+								(st.maxBodyAllowed ? st.maxBodyAllowed : ~size_t(0)));
 
-			// Append newly decoded bytes to the body
-			if (!produced.empty())
-			{
-				st.bodyBuffer.append(produced);
-				// enforce streaming cap for chunked
-				if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
-				{
-					Response err = makeHtmlError(413, "Payload Too Large",
-						"<h1>413 Payload Too Large</h1>");
-					finalizeAndQueue(fd, err);
-					st.phase = ClientState::SENDING_RESPONSE;
-					return false;
-				}
-			}
-
-			// Drop consumed bytes from recvBuffer
 			if (consumed > 0)
 				st.recvBuffer.erase(0, consumed);
 
-			// State checks
-			if (status == ChunkedDecoder::S_ERROR)
+			// Drain any decoded bytes into bodyBuffer
+			size_t before = st.bodyBuffer.size();
+			st.chunkDec.drainTo(st.bodyBuffer);
+			size_t drained = st.bodyBuffer.size() - before;
+
+			// Enforce streaming cap for chunked
+			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 			{
-				Response err = makeHtmlError(400, "Bad Request",
-					"<h1>400 Bad Request</h1><p>Malformed chunked body.</p>");
+				Response err;
+				err.status_code = 413;
+				err.status_message = "Payload Too Large";
+				err.headers["Content-Type"] = "text/html; charset=utf-8";
+				err.body = "<h1>413 Payload Too Large</h1>";
+				err.headers["Content-Length"] = to_string(err.body.size());
+				err.close_connection = false;
 				finalizeAndQueue(fd, err);
 				st.phase = ClientState::SENDING_RESPONSE;
 				return false;
 			}
-			if (status == ChunkedDecoder::S_DONE)
+
+			// Error / Done checks
+			if (st.chunkDec.hasError())
 			{
-				// Done decoding the body; any surplus in recvBuffer is the next request (pipelining)
+				Response err;
+				err.status_code = 400;
+				err.status_message = "Bad Request";
+				err.headers["Content-Type"] = "text/html; charset=utf-8";
+				err.body = "<h1>400 Bad Request</h1><p>Malformed chunked body.</p>";
+				err.headers["Content-Length"] = to_string(err.body.size());
+				err.close_connection = false;
+				finalizeAndQueue(fd, err);
+				st.phase = ClientState::SENDING_RESPONSE;
+				return false;
+			}
+
+			if (st.chunkDec.done())
+			{
 				st.phase = ClientState::READY_TO_DISPATCH;
 				return true;
 			}
 
-			// If decoder didn’t consume anything, we need more bytes from the socket
-			if (consumed == 0 && produced.empty())
+			// Need more data?
+			if (consumed == 0 && drained == 0)
 				return false;
 		}
 
-		// recvBuffer drained but decoder still needs more input
+		// recvBuffer drained but decoder still needs more
 		return false;
 	}
 
@@ -972,6 +1004,37 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	return false;
 }
 
+static const char* phaseToStr(ClientState::Phase p)
+{
+	switch (p)
+	{
+		case ClientState::READING_HEADERS:   return "READING_HEADERS";
+		case ClientState::READING_BODY:      return "READING_BODY";
+		case ClientState::READY_TO_DISPATCH: return "READY_TO_DISPATCH";
+		case ClientState::SENDING_RESPONSE:  return "SENDING_RESPONSE";
+		case ClientState::CLOSED:            return "CLOSED";
+	}
+	return "?";
+}
+
+// need to flesh it out once post/upload and cgi routig is ready
+void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
+{
+		std::cerr << "[fd " << fd << "] finalizeRequestAndQueueResponse enter" << std::endl;
+    Response res;
+    res.status_code = 501;
+    res.status_message = "Not Implemented";
+    res.headers["Content-Type"] = "text/html; charset=utf-8";
+    res.body = "<h1>501 Not Implemented</h1>";
+    res.headers["Content-Length"] = to_string(res.body.size());
+    res.close_connection = false;
+
+    finalizeAndQueue(fd, res);
+    st.phase = ClientState::SENDING_RESPONSE;
+		std::cerr << "[fd " << fd << "] queued response, phase=SENDING_RESPONSE" << std::endl;
+}
+
+//helper to print pahse of ClientState
 void SocketManager::handleClientRead(int fd)
 {
 	std::map<int, ClientState>::iterator it = m_clients.find(fd);
@@ -980,15 +1043,22 @@ void SocketManager::handleClientRead(int fd)
 
 	ClientState &st = it->second;
 
+	std::cerr << "[fd " << fd << "] enter handleClientRead phase=" << phaseToStr(st.phase)
+          << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
+
 	//dont read if we are still busy sending message
 	if (clientHasPendingWrite(fd))
+	{
+		std::cerr <<"skip read: pending write on fd" << fd << std::endl;
 		return ;
+	}
 	// 1. pull fresh bytes from revc() into st.recvBuffer
 	if (!readIntoBuffer(fd, st))
 	{
 		handleClientDisconnect(fd);
 		return;
 	}
+	std::cerr << "[fd " << fd << "] after readIntoBuffer recv=" << st.recvBuffer.size() << std::endl;
 
 	// 2. advance state machine
 	if (st.phase == ClientState::READING_HEADERS)
@@ -1017,16 +1087,18 @@ void SocketManager::handleClientRead(int fd)
 	}
 	if (st.phase == ClientState::READY_TO_DISPATCH)
 	{
+			std::cerr << "[fd " << fd << "] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse" << std::endl;
 		finalizeRequestAndQueueResponse(fd, st);
 		        // finalizeRequestAndQueueResponse() should:
         // - build & queue Response
         // - set st.phase = SENDING_RESPONSE
         // - maybe prep keep-alive state
+		return;
 	}
 
 }
 
-void SocketManager::handleClientRead(int fd)
+/* void SocketManager::handleClientRead(int fd)
 {
 	std::map<int, std::string>::const_iterator pending = m_clientWriteBuffers.find(fd);
 	if (pending != m_clientWriteBuffers.end() && !pending->second.empty())
@@ -1065,7 +1137,7 @@ void SocketManager::handleClientRead(int fd)
 		m_clientBuffers[fd].clear();
 
 	resetRequestState(fd);
-}
+} */
 
 void SocketManager::handleClientWrite(int fd)
 {
