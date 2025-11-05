@@ -250,6 +250,10 @@ bool SocketManager::parseRawHeadersIntoRequest(int fd, ClientState &st, size_t h
 	st.req.method = toUpperCopy(method);
 	st.req.path = target;      // or st.req.uri
 	st.req.http_version = version;
+	std::cerr << "[fd " << fd << "] parsed request line + headers: "
+          << st.req.method << " " << st.req.path << " " << st.req.http_version
+          << " (hdrs=" << st.req.headers.size() << ")\n";
+
 
 	// 2) Header fields
 	size_t pos = lineEnd + 2; // skip CRLF after start-line
@@ -486,7 +490,7 @@ static const char* phaseToStr(ClientState::Phase p)
 
 // Headers are fully parsed; prepare for body phase or dispatch.
 
-void SocketManager::finalizeHeaderPhaseTransition (ClientState &st, size_t hdrEndPos)
+void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size_t hdrEndPos)
 {
 	// 1) Drop the header block from the recv buffer (leave any coalesced body/pipelined data)
 	if (hdrEndPos > st.recvBuffer.size())
@@ -541,7 +545,7 @@ void SocketManager::finalizeHeaderPhaseTransition (ClientState &st, size_t hdrEn
 		// No body expected (no TE and no CL) — dispatch immediately
 		st.phase = ClientState::READY_TO_DISPATCH;
 	}
-	std::cerr << "[fd " << "] header->body: phase=" << phaseToStr(st.phase)
+	std::cerr << "[fd "<< fd << "] header->body: phase=" << phaseToStr(st.phase)
           << " recv=" << st.recvBuffer.size()
           << " body=" << st.bodyBuffer.size() << std::endl;
 }
@@ -568,7 +572,7 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 		return false;
 	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
-	finalizeHeaderPhaseTransition(st, hdrEndPos);
+	finalizeHeaderPhaseTransition(fd, st, hdrEndPos);
 
 	return true;
 
