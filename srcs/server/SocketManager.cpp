@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/06 16:16:51 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/06 17:55:15 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1029,12 +1029,16 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 		return;
 	}
 
-	// POST/DELETE to WIRE HERE NEXT
-	//if (st.req.method == "POST") {
-    //     handlePostUploadOrCgi(fd, st.req, server, st.bodyBuffer);
-    //     st.phase = ClientState::SENDING_RESPONSE;
-    //     return;
-    // }
+
+    if (st.req.method == "POST")
+    {
+        const RouteConfig *route = findMatchingLocation(server, st.req.path);
+        handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
+        st.phase = ClientState::SENDING_RESPONSE;
+        return;
+    }
+	// DELETE to WIRE HERE NEXT
+
     // if (st.req.method == "DELETE") {
     //     handleDeleteLegacy(fd, st.req, server);
     //     st.phase = ClientState::SENDING_RESPONSE;
