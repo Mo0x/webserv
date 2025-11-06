@@ -82,6 +82,7 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 									const RouteConfig *route,
 									const std::string &body)
 {
+	    (void)server; // unused for now; kept for future CGI/env or policy checks 
 	if (route && !route->upload_path.empty())
 	{
 		const std::string &dir = route->upload_path;
@@ -99,7 +100,7 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 		{
 			Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
 			finalizeAndQueue(fd, req, res, false, true);
-			true;
+			return ;
 		}
 		// writefile
 		std::ofstream ofs(full.c_str(), std::ios::out | std::ios:: binary | std::ios::trunc);
