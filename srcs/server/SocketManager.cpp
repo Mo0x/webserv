@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/05 18:57:37 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/06 16:16:51 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1020,18 +1020,40 @@ static const char* phaseToStr(ClientState::Phase p)
 // need to flesh it out once post/upload and cgi routig is ready
 void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 {
-		std::cerr << "[fd " << fd << "] finalizeRequestAndQueueResponse enter" << std::endl;
-    Response res;
-    res.status_code = 501;
-    res.status_message = "Not Implemented";
-    res.headers["Content-Type"] = "text/html; charset=utf-8";
-    res.body = "<h1>501 Not Implemented</h1>";
-    res.headers["Content-Length"] = to_string(res.body.size());
-    res.close_connection = false;
+	const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+	// Get/Head using previous dispatcher for (static/autoindex/redirect)
+	if (st.req.method == "GET" || st.req.method == "HEAD")
+	{
+		dispatchRequest(fd, st.req, server, st.req.method);
+		st.phase = ClientState::SENDING_RESPONSE;
+		return;
+	}
 
-    finalizeAndQueue(fd, res);
-    st.phase = ClientState::SENDING_RESPONSE;
-		std::cerr << "[fd " << fd << "] queued response, phase=SENDING_RESPONSE" << std::endl;
+	// POST/DELETE to WIRE HERE NEXT
+	//if (st.req.method == "POST") {
+    //     handlePostUploadOrCgi(fd, st.req, server, st.bodyBuffer);
+    //     st.phase = ClientState::SENDING_RESPONSE;
+    //     return;
+    // }
+    // if (st.req.method == "DELETE") {
+    //     handleDeleteLegacy(fd, st.req, server);
+    //     st.phase = ClientState::SENDING_RESPONSE;
+    //     return;
+    // }
+
+	//Fallback
+	std::cerr << "[fd " << fd << "] finalizeRequestAndQueueResponse enter" << std::endl;
+	Response res;
+	res.status_code = 501;
+	res.status_message = "Not Implemented";
+	res.headers["Content-Type"] = "text/html; charset=utf-8";
+	res.body = "<h1>501 Not Implemented</h1>";
+	res.headers["Content-Length"] = to_string(res.body.size());
+	res.close_connection = false;
+
+	finalizeAndQueue(fd, res);
+	st.phase = ClientState::SENDING_RESPONSE;
+	std::cerr << "[fd " << fd << "] queued response, phase=SENDING_RESPONSE" << std::endl;
 }
 
 //helper to print pahse of ClientState
