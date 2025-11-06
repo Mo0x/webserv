@@ -13,6 +13,7 @@ SRCS = \
 	./srcs/server/ServerSocket.cpp \
 	./srcs/server/SocketManager.cpp \
 	./srcs/server/SocketManagerHttp.cpp \
+	./srcs/server/SocketManagerPost.cpp \
 	./srcs/server/Response.cpp \
 	./srcs/utils/file_utils.cpp \
 	./srcs/utils/request_parser.cpp \

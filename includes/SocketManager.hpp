@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/05 19:10:23 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/06 16:31:53 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -144,6 +144,13 @@ class SocketManager
 	bool tryReadBody(int fd, ClientState &st);
 	void queueErrorAndClose(SocketManager &sm, int fd, int status, const std::string &title, const std::string &html);
 	void finalizeRequestAndQueueResponse(int fd, ClientState &st);
+
+	void	handlePostUploadOrCgi(int fd, 
+									const Request &req,
+									const ServerConfig &server,
+									const RouteConfig *route,
+									const std::string &body);
+	
 
 };
 
