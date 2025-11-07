@@ -61,8 +61,8 @@ void SocketManager::setPhase(int fd,
         std::cerr << "[fd " << fd << "] phase " << phaseToStr(st.phase)
                   << " -> " << phaseToStr(newp)
                   << " at " << where << std::endl;
-        st.phase = newp;
     }
+    st.phase = newp;
 }
 
 SocketManager::SocketManager(const Config &config) :
@@ -203,9 +203,9 @@ void SocketManager::handleNewConnection(int listen_fd)
 	}
 
 	// --- NEW: insert refactored per-connection state so handleClientRead() works
-	ClientState st;
-	st.phase          = ClientState::READING_HEADERS;
-	st.recvBuffer     = std::string();
+        ClientState st = ClientState();
+        setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
+        st.recvBuffer     = std::string();
 	st.bodyBuffer     = std::string();
 	st.isChunked      = false;
 	st.contentLength  = 0;
@@ -953,7 +953,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				Response err = makeHtmlError(413, "Payload Too Large",
 											"<h1>413 Payload Too Large</h1>");
 				finalizeAndQueue(fd, st.req, err, false, true);
-				st.phase = ClientState::SENDING_RESPONSE;
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 				return false;
 			}
 
@@ -962,15 +962,15 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				Response err = makeHtmlError(400, "Bad Request",
 											"<h1>400 Bad Request</h1><p>Malformed chunked body.</p>");
 				finalizeAndQueue(fd, st.req, err, false, true);
-				st.phase = ClientState::SENDING_RESPONSE;
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 				return false;
 			}
 
-			if (st.chunkDec.done())
-			{
-				st.phase = ClientState::READY_TO_DISPATCH;
-				return true;
-			}
+                        if (st.chunkDec.done())
+                        {
+                                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+                                return true;
+                        }
 
 			// No progress this tick → wait for more bytes.
 			if (consumed == 0 && drained == 0)
@@ -984,12 +984,12 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	const size_t want = st.contentLength;
 	const size_t haveNow = st.bodyBuffer.size();
 
-	if (want <= haveNow)
-	{
-		// Already complete (shouldn't generally happen here, but be defensive)
-		st.phase = ClientState::READY_TO_DISPATCH;
-		return true;
-	}
+        if (want <= haveNow)
+        {
+                // Already complete (shouldn't generally happen here, but be defensive)
+                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+                return true;
+        }
 
 	if (!st.recvBuffer.empty())
 	{
@@ -1007,19 +1007,19 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				Response err = makeHtmlError(413, "Payload Too Large",
 					"<h1>413 Payload Too Large</h1>");
 				finalizeAndQueue(fd, err);
-				st.phase = ClientState::SENDING_RESPONSE;
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 				return false;
 			}
 		}
 	}
 
 	// Check completion
-	if (st.bodyBuffer.size() >= want)
-	{
-		// Body complete — any remaining st.recvBuffer is pipelined next request
-		st.phase = ClientState::READY_TO_DISPATCH;
-		return true;
-	}
+        if (st.bodyBuffer.size() >= want)
+        {
+                // Body complete — any remaining st.recvBuffer is pipelined next request
+                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+                return true;
+        }
 
 	// Need more bytes
 	return false;
@@ -1035,18 +1035,18 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	if (st.req.method == "GET" || st.req.method == "HEAD")
 	{
 		dispatchRequest(fd, st.req, server, st.req.method);
-		st.phase = ClientState::SENDING_RESPONSE;
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeRequestAndQueueResponse");
 		return;
 	}
 
 
-    if (st.req.method == "POST")
-    {
-        const RouteConfig *route = findMatchingLocation(server, st.req.path);
-        handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
-        st.phase = ClientState::SENDING_RESPONSE;
-        return;
-    }
+	if (st.req.method == "POST")
+	{
+		const RouteConfig *route = findMatchingLocation(server, st.req.path);
+		handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeRequestAndQueueResponse");
+		return;
+	}
 	// DELETE to WIRE HERE NEXT
 
     // if (st.req.method == "DELETE") {
@@ -1066,7 +1066,7 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	res.close_connection = false;
 
 	finalizeAndQueue(fd, res);
-	st.phase = ClientState::SENDING_RESPONSE;
+	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeRequestAndQueueResponse");
 	std::cerr << "[fd " << fd << "] queued response, phase=SENDING_RESPONSE" << std::endl;
 }
 
@@ -1111,16 +1111,16 @@ void SocketManager::handleClientRead(int fd)
 			{
 				// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
 				// otherwise treat as incomplete body.
-				if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
-				{
-					st.phase = ClientState::READY_TO_DISPATCH;
-				}
+                                if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
+                                {
+                                        setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
+                                }
 				else
 				{
 					Response err = makeHtmlError(400, "Bad Request",
 						"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>");
 					finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-					st.phase = ClientState::SENDING_RESPONSE;
+					setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
 					return;
 				}
 			}

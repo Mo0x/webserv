@@ -94,9 +94,9 @@ bool SocketManager::checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos
 
 	if (hdrEndPos > HEADER_CAP)
 	{
-		Response err = makeHtmlError(431, "Request Header Fields Too Larger", "<h1>431 Request Header Fields Too Larger</h1>");
-		finalizeAndQueue(fd, err);
-		st.phase = ClientState::SENDING_RESPONSE;
+                Response err = makeHtmlError(431, "Request Header Fields Too Larger", "<h1>431 Request Header Fields Too Larger</h1>");
+                finalizeAndQueue(fd, err);
+                setPhase(fd, st, ClientState::SENDING_RESPONSE, "checkHeaderLimits");
 		return false;
 	}
 
@@ -108,8 +108,8 @@ bool SocketManager::checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos
 bool SocketManager::badRequestAndQueue(int fd, ClientState &st)
 {
 	Response err = makeHtmlError(400, "Bad Request", "<h1>400 Bad Request</h1>");
-	finalizeAndQueue(fd, err);
-	st.phase = ClientState::SENDING_RESPONSE;
+        finalizeAndQueue(fd, err);
+        setPhase(fd, st, ClientState::SENDING_RESPONSE, "badRequestAndQueue");
 	return false;
 }
 
@@ -335,8 +335,8 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 			res.headers["Content-Length"] = to_string(res.body.length());
 			res.close_connection = false;
 
-			finalizeAndQueue(fd, res);
-			st.phase = ClientState::SENDING_RESPONSE;
+                        finalizeAndQueue(fd, res);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
 			return false;
 		}
 	}
@@ -352,8 +352,8 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 		redir.headers["Content-Length"] = to_string(redir.body.length());
 		redir.close_connection = false;
 
-		finalizeAndQueue(fd, redir);
-		st.phase = ClientState::SENDING_RESPONSE;
+                finalizeAndQueue(fd, redir);
+                setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
 		return false;
 	}
 	//5) If you consider "no route" an error here (older code fell back to server root),
@@ -388,8 +388,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 	{
 		Response err = makeHtmlError(400, "Bad Request",
 			"<h1>400 Bad Request</h1><p>Both Transfer-Encoding and Content-Length present.</p>");
-		finalizeAndQueue(fd, err);
-		st.phase = ClientState::SENDING_RESPONSE;
+                finalizeAndQueue(fd, err);
+                setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 		return false;
 	}
 	// 2) Transfer-Encoding handling (only support 'chunked')
@@ -402,8 +402,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(400, "Bad Request",
 				"<h1>400 Bad Request</h1><p>Empty Transfer-Encoding.</p>");
-			finalizeAndQueue(fd, err);
-			st.phase = ClientState::SENDING_RESPONSE;
+                        finalizeAndQueue(fd, err);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
@@ -421,8 +421,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(501, "Not Implemented",
 				"<h1>501 Not Implemented</h1><p>Unsupported Transfer-Encoding.</p>");
-			finalizeAndQueue(fd, err);
-			st.phase = ClientState::SENDING_RESPONSE;
+                        finalizeAndQueue(fd, err);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 	}
@@ -436,8 +436,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(400, "Bad Request",
 				"<h1>400 Bad Request</h1><p>Multiple Content-Length values.</p>");
-			finalizeAndQueue(fd, err);
-			st.phase = ClientState::SENDING_RESPONSE;
+                        finalizeAndQueue(fd, err);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
@@ -447,8 +447,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(400, "Bad Request",
 				"<h1>400 Bad Request</h1><p>Invalid Content-Length.</p>");
-			finalizeAndQueue(fd, err);
-			st.phase = ClientState::SENDING_RESPONSE;
+                        finalizeAndQueue(fd, err);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
@@ -459,8 +459,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(413, "Payload Too Large",
 				"<h1>413 Payload Too Large</h1>");
-			finalizeAndQueue(fd, err);
-			st.phase = ClientState::SENDING_RESPONSE;
+                        finalizeAndQueue(fd, err);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
@@ -497,13 +497,13 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		hdrEndPos = st.recvBuffer.size(); // defensive
 	st.recvBuffer.erase(0, hdrEndPos);
 	// 2) Decide the next phase + optionally move already-received body bytes (CL case)
-	if (st.isChunked)
-	{
-		// For chunked, we don't pre-consume here. The chunk decoder will
-		// pull from st.recvBuffer during tryReadBody.
-		st.phase = ClientState::READING_BODY;
-		return;
-	}
+        if (st.isChunked)
+        {
+                // For chunked, we don't pre-consume here. The chunk decoder will
+                // pull from st.recvBuffer during tryReadBody.
+                setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+                return;
+        }
 
 	// Non-chunked framing
 	if (st.contentLength > 0)
@@ -512,12 +512,12 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		size_t have = st.recvBuffer.size();
 		size_t need = st.contentLength - st.bodyBuffer.size();
 
-		if (have == 0)
-		{
-			// No body bytes coalesced yet — switch to body phase and wait for more
-			st.phase = ClientState::READING_BODY;
-			return;
-		}
+                if (have == 0)
+                {
+                        // No body bytes coalesced yet — switch to body phase and wait for more
+                        setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+                        return;
+                }
 
 		// Move as much as we need from recvBuffer -> bodyBuffer
 		size_t take = (have < need) ? have : need;
@@ -528,23 +528,23 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		}
 
 		// If we finished the body right away, we may already have pipelined data
-		if (st.bodyBuffer.size() >= st.contentLength)
-		{
-			// Body complete -> ready to dispatch immediately.
-			// Any surplus left in st.recvBuffer is the start of the next request (HTTP pipelining).
-			st.phase = ClientState::READY_TO_DISPATCH;
-		}
-		else
-		{
-			// Still need more body bytes
-			st.phase = ClientState::READING_BODY;
-		}
-	}
-	else
-	{
-		// No body expected (no TE and no CL) — dispatch immediately
-		st.phase = ClientState::READY_TO_DISPATCH;
-	}
+                if (st.bodyBuffer.size() >= st.contentLength)
+                {
+                        // Body complete -> ready to dispatch immediately.
+                        // Any surplus left in st.recvBuffer is the start of the next request (HTTP pipelining).
+                        setPhase(fd, st, ClientState::READY_TO_DISPATCH, "finalizeHeaderPhaseTransition");
+                }
+                else
+                {
+                        // Still need more body bytes
+                        setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+                }
+        }
+        else
+        {
+                // No body expected (no TE and no CL) — dispatch immediately
+                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "finalizeHeaderPhaseTransition");
+        }
 	std::cerr << "[fd "<< fd << "] header->body: phase=" << phaseToStr(st.phase)
           << " recv=" << st.recvBuffer.size()
           << " body=" << st.bodyBuffer.size() << std::endl;
