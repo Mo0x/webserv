@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/07 14:49:06 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/07 16:02:31 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -39,7 +39,31 @@
 
 */
 /* helper for safeguard*/
-
+//debug func
+static const char* phaseToStr(ClientState::Phase p)
+{
+	switch (p)
+	{
+		case ClientState::READING_HEADERS:   return "READING_HEADERS";
+		case ClientState::READING_BODY:      return "READING_BODY";
+		case ClientState::READY_TO_DISPATCH: return "READY_TO_DISPATCH";
+		case ClientState::SENDING_RESPONSE:  return "SENDING_RESPONSE";
+		case ClientState::CLOSED:            return "CLOSED";
+	}
+	return "?";
+}
+void SocketManager::setPhase(int fd,
+                            ClientState &st,
+                            ClientState::Phase newp,
+                            const char* where)
+{
+    if (st.phase != newp) {
+        std::cerr << "[fd " << fd << "] phase " << phaseToStr(st.phase)
+                  << " -> " << phaseToStr(newp)
+                  << " at " << where << std::endl;
+        st.phase = newp;
+    }
+}
 
 SocketManager::SocketManager(const Config &config) :
 	m_config(config)
@@ -892,8 +916,18 @@ bool SocketManager::clientHasPendingWrite(int fd) const
 
 // Returns true only when the request body is fully read and st.phase is set to READY_TO_DISPATCH.
 // Returns false when we need more data OR when an error response was queued (SENDING_RESPONSE).
+
+
 bool SocketManager::tryReadBody(int fd, ClientState &st)
 {
+#ifndef NDEBUG
+	if (st.phase != ClientState::READING_BODY) {
+		std::cerr << "[fd " << fd << "] tryReadBody called in phase=" << phaseToStr(st.phase)
+		          << " — bug in call site\n";
+		// continue anyway, but this is a red flag
+	}
+#endif
+
 	// --- CHUNKED TRANSFER ---------------------------------------------------
 	if (st.isChunked)
 	{
@@ -991,18 +1025,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	return false;
 }
 
-static const char* phaseToStr(ClientState::Phase p)
-{
-	switch (p)
-	{
-		case ClientState::READING_HEADERS:   return "READING_HEADERS";
-		case ClientState::READING_BODY:      return "READING_BODY";
-		case ClientState::READY_TO_DISPATCH: return "READY_TO_DISPATCH";
-		case ClientState::SENDING_RESPONSE:  return "SENDING_RESPONSE";
-		case ClientState::CLOSED:            return "CLOSED";
-	}
-	return "?";
-}
+
 
 // need to flesh it out once post/upload and cgi routig is ready
 void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)

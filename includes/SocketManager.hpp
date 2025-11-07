@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/06 16:31:53 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/07 15:54:49 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -150,6 +150,10 @@ class SocketManager
 									const ServerConfig &server,
 									const RouteConfig *route,
 									const std::string &body);
+	void SocketManager::setPhase(int fd,
+                            ClientState &st,
+                            ClientState::Phase newp,
+                            const char* where);
 	
 
 };
