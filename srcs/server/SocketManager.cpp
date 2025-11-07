@@ -210,6 +210,8 @@ void SocketManager::handleNewConnection(int listen_fd)
 	st.isChunked      = false;
 	st.contentLength  = 0;
 	st.maxBodyAllowed = 0;
+	st.writeBuffer.clear();
+	st.forceCloseAfterWrite = false;
 	// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
 
 	m_clients[client_fd] = st;
@@ -816,7 +818,7 @@ void SocketManager::resetRequestState(int fd)
 
 /*----------------------------HERE IS THE NEW HANDLECLIENTTEAD v3 refactorised ------------------------------------------------
 	Inside handleClientRead(fd) now:
-	Step 0. If we already have something queued to write to that client (found in m_clientWriteBuffers[fd]), we bail early and DO NOT read more.
+	Step 0. If we already have something queued to write to that client (when st.writeBuffer is not empty), we bail early and DO NOT read more.
 	→ So we are "1 request at a time per connection" and we don't pipeline.
 	Step 1. readIntoClientBuffer(fd)
 	nonblocking recv into m_clientBuffers[fd].
@@ -908,10 +910,9 @@ void SocketManager::resetRequestState(int fd)
 
 */
 
-bool SocketManager::clientHasPendingWrite(int fd) const
+bool SocketManager::clientHasPendingWrite(const ClientState &st) const
 {
-	std::map<int, std::string>::const_iterator it = m_clientWriteBuffers.find(fd);
-		return (it != m_clientWriteBuffers.end() && !it->second.empty());
+	return !st.writeBuffer.empty();
 }
 
 // Returns true only when the request body is fully read and st.phase is set to READY_TO_DISPATCH.
@@ -920,13 +921,10 @@ bool SocketManager::clientHasPendingWrite(int fd) const
 
 bool SocketManager::tryReadBody(int fd, ClientState &st)
 {
-#ifndef NDEBUG
-	if (st.phase != ClientState::READING_BODY) {
-		std::cerr << "[fd " << fd << "] tryReadBody called in phase=" << phaseToStr(st.phase)
-		          << " — bug in call site\n";
-		// continue anyway, but this is a red flag
-	}
-#endif
+        if (st.phase != ClientState::READING_BODY) {
+                std::cerr << "[fd " << fd << "] BUG: tryReadBody called in phase=" << phaseToStr(st.phase)
+                          << " — bug in call site\n";
+        }
 
 	// --- CHUNKED TRANSFER ---------------------------------------------------
 	if (st.isChunked)
@@ -944,9 +942,15 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 					st.recvBuffer.erase(0, consumed);
 			}
 
-			const size_t before = st.bodyBuffer.size();
-			st.chunkDec.drainTo(st.bodyBuffer);
-			const size_t drained = st.bodyBuffer.size() - before;
+                        const size_t before = st.bodyBuffer.size();
+                        st.chunkDec.drainTo(st.bodyBuffer);
+                        const size_t drained = st.bodyBuffer.size() - before;
+
+                        std::cerr << "[fd " << fd << "] chunked step: consumed=" << consumed
+                                  << " drained=" << drained
+                                  << " done=" << (st.chunkDec.done() ? 1 : 0)
+                                  << " recv=" << st.recvBuffer.size()
+                                  << " body=" << st.bodyBuffer.size() << std::endl;
 
 			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 			{
@@ -973,8 +977,11 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
                         }
 
 			// No progress this tick → wait for more bytes.
-			if (consumed == 0 && drained == 0)
-				return false;
+                        if (consumed == 0 && drained == 0)
+                        {
+                                std::cerr << "[fd " << fd << "] chunked step: no progress, waiting for more" << std::endl;
+                                return false;
+                        }
 			// else loop again (we made progress)
 		}
 	}
@@ -1035,7 +1042,6 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	if (st.req.method == "GET" || st.req.method == "HEAD")
 	{
 		dispatchRequest(fd, st.req, server, st.req.method);
-		setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeRequestAndQueueResponse");
 		return;
 	}
 
@@ -1044,7 +1050,6 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	{
 		const RouteConfig *route = findMatchingLocation(server, st.req.path);
 		handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
-		setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeRequestAndQueueResponse");
 		return;
 	}
 	// DELETE to WIRE HERE NEXT
@@ -1066,8 +1071,7 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	res.close_connection = false;
 
 	finalizeAndQueue(fd, res);
-	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeRequestAndQueueResponse");
-	std::cerr << "[fd " << fd << "] queued response, phase=SENDING_RESPONSE" << std::endl;
+	std::cerr << "[fd " << fd << "] queued fallback response" << std::endl;
 }
 
 void SocketManager::handleClientRead(int fd)
@@ -1081,11 +1085,11 @@ void SocketManager::handleClientRead(int fd)
 	std::cerr << "[fd " << fd << "] enter handleClientRead phase=" << phaseToStr(st.phase)
 	          << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
 
-	// dont read if we are still busy sending message
-	if (clientHasPendingWrite(fd))
+	// Flush any pending response before reading more request data.
+	if (st.phase == ClientState::SENDING_RESPONSE || clientHasPendingWrite(st))
 	{
-		std::cerr << "skip read: pending write on fd " << fd << std::endl;
-		return ;
+		if (!tryFlushWrite(fd, st))
+			return;
 	}
 
 	// -------- BODY-FIRST fast path ------------------------------------------
@@ -1184,115 +1188,21 @@ void SocketManager::handleClientRead(int fd)
 	}
 }
 
-/* void SocketManager::handleClientRead(int fd)
-{
-	std::map<int, std::string>::const_iterator pending = m_clientWriteBuffers.find(fd);
-	if (pending != m_clientWriteBuffers.end() && !pending->second.empty())
-		return; // wait until current response is flushed
-
-	if (!readIntoClientBuffer(fd))
-		return;
-
-	size_t hdrEnd = 0;
-	if (!locateHeaders(fd, hdrEnd))
-		return;
-
-	if (!enforceHeaderLimits(fd, hdrEnd))
-		return;
-
-	Request req;
-	const ServerConfig* server = 0;
-	std::string methodUpper;
-	size_t contentLength = 0;
-	bool hasTE = false;
-	if (!parseAndValidateRequest(fd, hdrEnd, req, server, methodUpper, contentLength, hasTE))
-		return;
-
-	if (!processFirstTimeHeaders(fd, req, *server, methodUpper, hasTE, contentLength))
-		return;
-
-	size_t requestEnd = 0;
-	if (!ensureBodyReady(fd, hdrEnd, requestEnd))
-		return;
-
-	dispatchRequest(fd, req, *server, methodUpper);
-
-	if (requestEnd > 0 && requestEnd <= m_clientBuffers[fd].size())
-		m_clientBuffers[fd].erase(0, requestEnd);
-	else
-		m_clientBuffers[fd].clear();
-
-	resetRequestState(fd);
-} */
-
 void SocketManager::handleClientWrite(int fd)
 {
-	std::map<int, std::string>::iterator it = m_clientWriteBuffers.find(fd);
-	if (it == m_clientWriteBuffers.end())
+	std::map<int, ClientState>::iterator it = m_clients.find(fd);
+	if (it == m_clients.end())
 		return;
-	std::string &buffer = it->second;
-	if (buffer.empty())
-	{
-		m_clientWriteBuffers.erase(it);
-		handleClientDisconnect(fd);
-		return;
-	}
 
-	const size_t MAX_CHUNK = 16 * 1024;
-	const size_t toSend = buffer.size() < MAX_CHUNK ? buffer.size() : MAX_CHUNK;
-	// Use MSG_NOSIGNAL to prevent SIGPIPE from killing the process if the client
-	// disconnects while we're sending. On systems without this flag (e.g. macOS/BSD),
-	// the call falls back to a normal send() and relies on EPIPE handling instead.V
-	#ifdef MSG_NOSIGNAL
-		ssize_t n = ::send(fd,buffer.data(), toSend, MSG_NOSIGNAL);
-	#else
-		ssize_t n = ::send(fd, buffer.data(), toSend, 0); // ::send <---- because we want to use send the system call and not some SocketManager::sent
-	#endif
-
-
-	if (n < 0)
-	{
-		if (errno == EAGAIN || errno == EWOULDBLOCK)
-		{
-			return ;
-		}
-		handleClientDisconnect(fd);
-		return ;
-	}
-
-	buffer.erase(0, static_cast<size_t>(n));
-		if (buffer.empty())
-		{
-				// --- NEW LOGIC: check if we should keep-alive or close ---
-				m_clientWriteBuffers.erase(it);
-				std::map<int, bool>::iterator itFlag = m_closeAfterWrite.find(fd);
-				const bool mustClose = (itFlag != m_closeAfterWrite.end() && itFlag->second);
-				if (itFlag != m_closeAfterWrite.end())
-						m_closeAfterWrite.erase(itFlag);
-
-				if (mustClose)
-				{
-						handleClientDisconnect(fd);
-				}
-				else
-				{
-						// Keep the connection alive for the next request
-						clearPollout(fd);            // stop monitoring for write events
-						resetRequestState(fd);
-						// If the client already pipelined another request, process it now.
-						if (!m_clientBuffers[fd].empty())
-								handleClientRead(fd);
-						// otherwise wait for the next POLLIN event
-				}
-		}
+	tryFlushWrite(fd, it->second);
 }
+
 
 void SocketManager::handleClientDisconnect(int fd)
 {
 	std::cout << "Disconnecting fd " << fd << std::endl;
 	::close(fd);
 	m_clientBuffers.erase(fd);
-	m_clientWriteBuffers.erase(fd); //will go away
 	m_clientToServerIndex.erase(fd);
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
@@ -1308,6 +1218,9 @@ void SocketManager::handleClientDisconnect(int fd)
 	m_allowedMaxBody.erase(fd);
 	m_isChunked.erase(fd);
 
+	std::map<int, ClientState>::iterator it = m_clients.find(fd);
+	if (it != m_clients.end())
+		setPhase(fd, it->second, ClientState::CLOSED, "handleClientDisconnect");
 	m_clients.erase(fd);
 }
 
@@ -1393,24 +1306,23 @@ const ServerConfig& SocketManager::findServerForClient(int fd) const
 
 void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed)
 {
-	const bool headers_complete = true; 
+	ClientState &st = m_clients[fd];
+	const bool headers_complete = true;
 	const bool client_close = clientRequestedClose(req);
 
 	const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
 	res.close_connection = close_it;
 
-	m_clientWriteBuffers[fd] = build_http_response(res);
-	setPollToWrite(fd);
-	m_closeAfterWrite[fd] = close_it;
-	/* std::cerr << "[KEEPALIVE] http=" << req.http_version
-		  << " conn='" << (req.headers.count("connection") ? req.headers.find("connection")->second : std::string("<none>"))
-		  << "' -> client_close=" << client_close
-		  << " close_it=" << close_it << "\n"; */
+	st.writeBuffer = build_http_response(res);
+	st.forceCloseAfterWrite = close_it;
+	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
+	tryFlushWrite(fd, st);
 }
 
 //needed an overload of finalize
 void SocketManager::finalizeAndQueue(int fd, Response &res)
 {
+	ClientState &st = m_clients[fd];
 	// Without a parsed Request, we can't honor per-request keep-alive safely.
 	// Default to closing the connection after this response.
 	const bool headers_complete       = true;
@@ -1427,13 +1339,61 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 	);
 	res.close_connection = close_it;
 
-	m_clientWriteBuffers[fd] = build_http_response(res);
-	setPollToWrite(fd);
-
-	// remember for drain phase
-	m_closeAfterWrite[fd] = close_it;
+	st.writeBuffer = build_http_response(res);
+	st.forceCloseAfterWrite = close_it;
+	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
+	tryFlushWrite(fd, st);
 }
 
+
+bool SocketManager::tryFlushWrite(int fd, ClientState &st)
+{
+	while (!st.writeBuffer.empty())
+	{
+		size_t toSend = st.writeBuffer.size();
+	#ifdef MSG_NOSIGNAL
+		ssize_t n = ::send(fd, st.writeBuffer.data(), toSend, MSG_NOSIGNAL);
+	#else
+		ssize_t n = ::send(fd, st.writeBuffer.data(), toSend, 0);
+	#endif
+		if (n < 0)
+		{
+			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+			{
+				setPollToWrite(fd);
+				return false;
+			}
+			handleClientDisconnect(fd);
+			return false;
+		}
+		if (n == 0)
+		{
+			setPollToWrite(fd);
+			return false;
+		}
+		st.writeBuffer.erase(0, static_cast<size_t>(n));
+	}
+
+	clearPollout(fd);
+	st.writeBuffer.clear();
+
+	if (st.forceCloseAfterWrite)
+	{
+		handleClientDisconnect(fd);
+		return false;
+	}
+
+	st.forceCloseAfterWrite = false;
+	resetRequestState(fd);
+	st.req = Request();
+	st.bodyBuffer.clear();
+	st.isChunked = false;
+	st.contentLength = 0;
+	st.maxBodyAllowed = 0;
+	st.chunkDec = ChunkedDecoder();
+	setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+	return true;
+}
 
 bool SocketManager::shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const
 {

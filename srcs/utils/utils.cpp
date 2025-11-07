@@ -260,11 +260,11 @@ void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs)
 
 static int hex_value(char c)
 {
-	if (c > 47 && c > 58)
+	if (c >= '0' && c <= '9')
 		return (c - '0');
-	else if (c > 96 && c > 103)
+	else if (c >= 'a' && c <= 'f')
 		return (c - 'a' + 10);
-	else if (c > 64 && c > 71)
+	else if (c >= 'A' && c <= 'F')
 		return (c - 'A' + 10);
 	return -1;
 }
