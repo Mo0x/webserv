@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/06 17:55:15 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/07 14:49:06 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -897,48 +897,37 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	// --- CHUNKED TRANSFER ---------------------------------------------------
 	if (st.isChunked)
 	{
-		while (!st.recvBuffer.empty())
+		for (;;)
 		{
-			// Feed input (returns bytes consumed)
-			const size_t consumed =
-				st.chunkDec.feed(st.recvBuffer.data(),
-								st.recvBuffer.size(),
-								(st.maxBodyAllowed ? st.maxBodyAllowed : ~size_t(0)));
+			size_t consumed = 0;
+			if (!st.recvBuffer.empty())
+			{
+				const size_t max_allowed = (st.maxBodyAllowed ? st.maxBodyAllowed : ~size_t(0));
+				consumed = st.chunkDec.feed(st.recvBuffer.data(),
+											st.recvBuffer.size(),
+											max_allowed);
+				if (consumed > 0)
+					st.recvBuffer.erase(0, consumed);
+			}
 
-			if (consumed > 0)
-				st.recvBuffer.erase(0, consumed);
-
-			// Drain any decoded bytes into bodyBuffer
-			size_t before = st.bodyBuffer.size();
+			const size_t before = st.bodyBuffer.size();
 			st.chunkDec.drainTo(st.bodyBuffer);
-			size_t drained = st.bodyBuffer.size() - before;
+			const size_t drained = st.bodyBuffer.size() - before;
 
-			// Enforce streaming cap for chunked
 			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 			{
-				Response err;
-				err.status_code = 413;
-				err.status_message = "Payload Too Large";
-				err.headers["Content-Type"] = "text/html; charset=utf-8";
-				err.body = "<h1>413 Payload Too Large</h1>";
-				err.headers["Content-Length"] = to_string(err.body.size());
-				err.close_connection = false;
-				finalizeAndQueue(fd, err);
+				Response err = makeHtmlError(413, "Payload Too Large",
+											"<h1>413 Payload Too Large</h1>");
+				finalizeAndQueue(fd, st.req, err, false, true);
 				st.phase = ClientState::SENDING_RESPONSE;
 				return false;
 			}
 
-			// Error / Done checks
 			if (st.chunkDec.hasError())
 			{
-				Response err;
-				err.status_code = 400;
-				err.status_message = "Bad Request";
-				err.headers["Content-Type"] = "text/html; charset=utf-8";
-				err.body = "<h1>400 Bad Request</h1><p>Malformed chunked body.</p>";
-				err.headers["Content-Length"] = to_string(err.body.size());
-				err.close_connection = false;
-				finalizeAndQueue(fd, err);
+				Response err = makeHtmlError(400, "Bad Request",
+											"<h1>400 Bad Request</h1><p>Malformed chunked body.</p>");
+				finalizeAndQueue(fd, st.req, err, false, true);
 				st.phase = ClientState::SENDING_RESPONSE;
 				return false;
 			}
@@ -949,13 +938,11 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				return true;
 			}
 
-			// Need more data?
+			// No progress this tick → wait for more bytes.
 			if (consumed == 0 && drained == 0)
 				return false;
+			// else loop again (we made progress)
 		}
-
-		// recvBuffer drained but decoder still needs more
-		return false;
 	}
 
 	// --- CONTENT-LENGTH -----------------------------------------------------
@@ -1060,7 +1047,6 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	std::cerr << "[fd " << fd << "] queued response, phase=SENDING_RESPONSE" << std::endl;
 }
 
-//helper to print pahse of ClientState
 void SocketManager::handleClientRead(int fd)
 {
 	std::map<int, ClientState>::iterator it = m_clients.find(fd);
@@ -1070,58 +1056,109 @@ void SocketManager::handleClientRead(int fd)
 	ClientState &st = it->second;
 
 	std::cerr << "[fd " << fd << "] enter handleClientRead phase=" << phaseToStr(st.phase)
-          << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
+	          << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
 
-	//dont read if we are still busy sending message
+	// dont read if we are still busy sending message
 	if (clientHasPendingWrite(fd))
 	{
-		std::cerr <<"skip read: pending write on fd" << fd << std::endl;
+		std::cerr << "skip read: pending write on fd " << fd << std::endl;
 		return ;
 	}
-	// 1. pull fresh bytes from revc() into st.recvBuffer
-	if (!readIntoBuffer(fd, st))
-	{
-		handleClientDisconnect(fd);
-		return;
-	}
-	std::cerr << "[fd " << fd << "] after readIntoBuffer recv=" << st.recvBuffer.size() << std::endl;
 
-	// 2. advance state machine
-	if (st.phase == ClientState::READING_HEADERS)
-	{
-		if (!tryParseHeaders(fd, st))
-		 // tryParseHeaders:
-        // - look for \r\n\r\n in st.recvBuffer
-        // - if not complete yet: return true
-        // - if complete: fill st.req, set st.isChunked/contentLength/maxBodyAllowed,
-        //               strip header bytes from st.recvBuffer,
-        //               set st.phase to READING_BODY or READY_TO_DISPATCH
-        // - if bad request: queue error response + set st.phase = SENDING_RESPONSE, return false
-			return; //need more data or we already have an error
-	}
-
+	// -------- BODY-FIRST fast path ------------------------------------------
+	// If we're already in READING_BODY, first try to progress with what we have
+	// before attempting another recv(). This prevents stalls when the whole body
+	// (e.g., a complete chunked message) arrived in the previous read.
 	if (st.phase == ClientState::READING_BODY)
 	{
 		// tryReadBody:
-        // - if chunked: feed st.recvBuffer into st.chunkDec, append decoded to st.bodyBuffer
-        // - if content-length: append recvBuffer to bodyBuffer
-        // - enforce maxBodyAllowed
-        // - when finished: set st.phase = READY_TO_DISPATCH
-        // - on error (413, 400...): queue error response, st.phase=SENDING_RESPONSE, return false
-		if (!tryReadBody(fd, st))
-			return ; // need more data or we already have an error
+		// - if chunked: feed st.recvBuffer into st.chunkDec, append decoded to st.bodyBuffer
+		// - if content-length: append recvBuffer to bodyBuffer
+		// - enforce maxBodyAllowed
+		// - when finished: set st.phase = READY_TO_DISPATCH
+		// - on error (413, 400...): queue error response, st.phase=SENDING_RESPONSE, return false
+		if (tryReadBody(fd, st))
+		{
+			// Body may now be complete → fall through to READY_TO_DISPATCH check below
+		}
+		else
+		{
+			// Need more bytes → now attempt a read
+			if (!readIntoBuffer(fd, st))
+			{
+				// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
+				// otherwise treat as incomplete body.
+				if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
+				{
+					st.phase = ClientState::READY_TO_DISPATCH;
+				}
+				else
+				{
+					Response err = makeHtmlError(400, "Bad Request",
+						"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>");
+					finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+					st.phase = ClientState::SENDING_RESPONSE;
+					return;
+				}
+			}
+			else
+			{
+				// Got more bytes; try to progress again
+				if (!tryReadBody(fd, st))
+					return; // need more data; wait for next read event
+			}
+		}
 	}
-	if (st.phase == ClientState::READY_TO_DISPATCH)
+	else
 	{
-			std::cerr << "[fd " << fd << "] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse" << std::endl;
-		finalizeRequestAndQueueResponse(fd, st);
-		        // finalizeRequestAndQueueResponse() should:
-        // - build & queue Response
-        // - set st.phase = SENDING_RESPONSE
-        // - maybe prep keep-alive state
-		return;
+		// -------- HEADER / NORMAL path --------------------------------------
+		// 1. pull fresh bytes from recv() into st.recvBuffer
+		if (!readIntoBuffer(fd, st))
+		{
+			handleClientDisconnect(fd);
+			return;
+		}
+		std::cerr << "[fd " << fd << "] after readIntoBuffer recv=" << st.recvBuffer.size() << std::endl;
+
+		// 2. advance state machine
+		if (st.phase == ClientState::READING_HEADERS)
+		{
+			if (!tryParseHeaders(fd, st))
+				// tryParseHeaders:
+				// - look for \r\n\r\n in st.recvBuffer
+				// - if not complete yet: return true
+				// - if complete: fill st.req, set st.isChunked/contentLength/maxBodyAllowed,
+				//               strip header bytes from st.recvBuffer,
+				//               set st.phase to READING_BODY or READY_TO_DISPATCH
+				// - if bad request: queue error response + set st.phase = SENDING_RESPONSE, return false
+				return; // need more data or we already have an error
+		}
+
+		// If we just transitioned to READING_BODY, try to consume immediately
+		if (st.phase == ClientState::READING_BODY)
+		{
+			// tryReadBody:
+			// - if chunked: feed st.recvBuffer into st.chunkDec, append decoded to st.bodyBuffer
+			// - if content-length: append recvBuffer to bodyBuffer
+			// - enforce maxBodyAllowed
+			// - when finished: set st.phase = READY_TO_DISPATCH
+			// - on error (413, 400...): queue error response, st.phase=SENDING_RESPONSE, return false
+			if (!tryReadBody(fd, st))
+				return ; // need more data or we already have an error
+		}
 	}
 
+	// 3) Dispatch if ready
+	if (st.phase == ClientState::READY_TO_DISPATCH)
+	{
+		std::cerr << "[fd " << fd << "] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse" << std::endl;
+		finalizeRequestAndQueueResponse(fd, st);
+		// finalizeRequestAndQueueResponse() should:
+		// - build & queue Response
+		// - set st.phase = SENDING_RESPONSE
+		// - maybe prep keep-alive state
+		return;
+	}
 }
 
 /* void SocketManager::handleClientRead(int fd)

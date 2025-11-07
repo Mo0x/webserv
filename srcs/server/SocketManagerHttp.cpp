@@ -552,28 +552,43 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 {
-	// 1) do we have header yet
-	size_t hdrEndPos; 
+		// 1) do we have full headers?
+	size_t hdrEndPos;
+	std::cerr << "[fd " << fd << "] tryReadBody: chunked=" << (st.isChunked?1:0)
+          << " recv=" << st.recvBuffer.size()
+          << " body=" << st.bodyBuffer.size() << std::endl;
 	if (findHeaderBoundary(st, hdrEndPos))
 		return true;
-	std::cerr << "[fd " << fd << "] parsed request line + headers: "
-          << st.req.method << " " << st.req.path << " " << st.req.http_version << std::endl;
-	// 2) check header sanity /size limits
+
+	// 2) limits
 	if (!checkHeaderLimits(fd, st, hdrEndPos))
-		return false; // we already queued an error reponse or killed the connection
-	std::cerr << "[fd " << fd << "] policy: maxBodyAllowed=" << st.maxBodyAllowed << std::endl;
-	// 3) Parse the request line +headers;
+		return false;
+
+	// 3) parse start-line + headers (fills st.req.*, lowercases header names)
 	if (!parseRawHeadersIntoRequest(fd, st, hdrEndPos))
 		return false;
-	std::cerr << "[fd " << fd << "] framing: isChunked=" << (st.isChunked?1:0)
-				  << " contentLength=" << st.contentLength << std::endl;
-	
+
+	// (optional) header dump for debugging
+	std::cerr << "[fd " << fd << "] headers:";
+	for (std::map<std::string,std::string>::const_iterator it = st.req.headers.begin();
+		it != st.req.headers.end(); ++it)
+		std::cerr << " [" << it->first << ": " << it->second << "]";
+	std::cerr << std::endl;
+
+	// 4) policy (method allowed, maxBodyAllowed, redirects...)
 	if (!applyRoutePolicyAfterHeaders(fd, st))
 		return false;
+
+	// 5) framing (sets st.isChunked / st.contentLength, may queue 4xx/5xx)
 	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
+
+	// NOW it’s meaningful to log framing:
+	std::cerr << "[fd " << fd << "] framing: isChunked="
+			<< (st.isChunked?1:0) << " contentLength=" << st.contentLength << std::endl;
+
+	// 6) transition (only enter READING_BODY if we actually have framing)
 	finalizeHeaderPhaseTransition(fd, st, hdrEndPos);
 
 	return true;
-
 }
