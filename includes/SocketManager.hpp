@@ -53,6 +53,10 @@ struct ClientState
 
 	//our decoder stated when TE: chunked
 	ChunkedDecoder	chunkDec;
+
+	// pending response payload
+	std::string		writeBuffer;
+	bool			forceCloseAfterWrite;
 };
 
 class SocketManager
@@ -62,7 +66,6 @@ class SocketManager
 	std::vector<struct pollfd>	m_pollfds;
 	std::set<int>				m_serverFds;     // to distinguish server vs client
     std::map<int, std::string> 	m_clientBuffers; // client fd → partial data
-	std::map<int, std::string>	m_clientWriteBuffers;
 	std::map<int, ClientState>	m_clients;
 	std::vector<ServerConfig>	m_serversConfig;
 	Config						m_config;
@@ -77,9 +80,6 @@ class SocketManager
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
 	std::map<int, bool> m_isChunked;
-
-	//for keep-alive connection
-	std::map<int, bool> m_closeAfterWrite;
 
 	public:
 	SocketManager(const Config &config);
@@ -131,7 +131,7 @@ class SocketManager
 							const ServerConfig &server,
 							const std::string &methodUpper);
 	void resetRequestState(int fd);
-	bool clientHasPendingWrite(int fd) const;
+	bool clientHasPendingWrite(const ClientState &st) const;
 
 	bool tryParseHeaders(int fd, ClientState &st);
 	bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
@@ -144,13 +144,14 @@ class SocketManager
 	bool tryReadBody(int fd, ClientState &st);
 	void queueErrorAndClose(SocketManager &sm, int fd, int status, const std::string &title, const std::string &html);
 	void finalizeRequestAndQueueResponse(int fd, ClientState &st);
+	bool tryFlushWrite(int fd, ClientState &st);
 
 	void	handlePostUploadOrCgi(int fd, 
 									const Request &req,
 									const ServerConfig &server,
 									const RouteConfig *route,
 									const std::string &body);
-	void SocketManager::setPhase(int fd,
+	void setPhase(int fd,
                             ClientState &st,
                             ClientState::Phase newp,
                             const char* where);
