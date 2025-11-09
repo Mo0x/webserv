@@ -317,6 +317,27 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 			allowed = server.client_max_body_size;
 		st.maxBodyAllowed = allowed;
 	}
+
+	// 2.5) early 501 check (server doesn't implement this verb at all)
+	{
+		const std::string &m = st.req.method; // expected UPPER already
+		if (m != "GET" && m != "POST" && m != "DELETE" && m != "HEAD" && m != "OPTIONS")
+		{
+			Response res;
+			res.status_code = 501;
+			res.status_message = "Not Implemented";
+			res.headers["Content-Type"] = "text/html; charset=utf-8";
+			res.body = "<h1>501 Not Implemented</h1>";
+			res.headers["Content-Length"] = to_string(res.body.length());
+			res.close_connection = false;
+
+			finalizeAndQueue(fd, res);
+			setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
+			return false; // pre-body short-circuit
+		}
+	}
+
+	
 	//3) early 405 check
 
 	if (route && !route->allowed_methods.empty())

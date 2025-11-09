@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/09 18:20:04 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/09 18:21:38 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -569,6 +569,21 @@ bool SocketManager::processFirstTimeHeaders(int fd, const Request &req,
 	else if (server.client_max_body_size > 0)
 		allowed = server.client_max_body_size;
 	m_allowedMaxBody[fd] = allowed;
+
+	// early 501 (pre-body) — server doesn't implement this method at all
+	if (methodUpper != "GET" && methodUpper != "POST" &&
+		methodUpper != "DELETE" && methodUpper != "HEAD" &&
+		methodUpper != "OPTIONS")
+	{
+		Response res;
+		res.status_code = 501;
+		res.status_message = "Not Implemented";
+		res.headers["Content-Type"] = "text/html; charset=utf-8";
+		res.body = "<h1>501 Not Implemented</h1>";
+		res.headers["Content-Length"] = to_string(res.body.length());
+		finalizeAndQueue(fd, res);
+		return false;
+	}
 
 	// early 405 (pre-body)
 	if (route && !route->allowed_methods.empty() &&
