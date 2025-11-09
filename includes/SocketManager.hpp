@@ -114,19 +114,20 @@ class SocketManager
 	bool readIntoBuffer(int fd, ClientState &st);
 	bool readIntoClientBuffer(int fd); // probably to delete once the new handleClientRead works
 
-	bool locateHeaders(int fd, size_t &hdrEnd);
-	bool enforceHeaderLimits(int fd, size_t hdrEnd);
-	bool parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
-									const ServerConfig* &server,
-									std::string &methodUpper,
-									size_t &contentLength,
-									bool &hasTE);
-	bool processFirstTimeHeaders(int fd, const Request &req,
-									const ServerConfig &server,
-									const std::string &methodUpper,
-									bool hasTE,
-									size_t contentLength);
-	bool ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd);
+        // Legacy header/body pipeline helpers (preserved under srcs/legacy/).
+        bool locateHeaders(int fd, size_t &hdrEnd);
+        bool enforceHeaderLimits(int fd, size_t hdrEnd);
+        bool parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
+                                                                        const ServerConfig* &server,
+                                                                        std::string &methodUpper,
+                                                                        size_t &contentLength,
+                                                                        bool &hasTE);
+        bool processFirstTimeHeaders(int fd, const Request &req,
+                                                                        const ServerConfig &server,
+                                                                        const std::string &methodUpper,
+                                                                        bool hasTE,
+                                                                        size_t contentLength);
+        bool ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd);
 	void dispatchRequest(int fd, const Request &req,
 							const ServerConfig &server,
 							const std::string &methodUpper);
