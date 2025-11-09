@@ -1,5 +1,9 @@
-#ifndef SERVERCONFIG_HPP
-#define SERVERCONFIG_HPP
+// LEGACY: retained for reference; not used in current pipeline.
+// Original file: includes/to_delete_ServerConfig.hpp
+// Last moved: 2025-02-15
+
+#ifndef LEGACY_SERVERCONFIG_HPP
+#define LEGACY_SERVERCONFIG_HPP
 
 /*ALMOST THE SAME AS CONFIG.HPP NEED TO THIS ONE AND USE CONFIG.HPP*/
 
