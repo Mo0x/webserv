@@ -57,6 +57,7 @@ struct ClientState
 	// pending response payload
 	std::string		writeBuffer;
 	bool			forceCloseAfterWrite;
+	bool			closing;
 };
 
 class SocketManager
@@ -143,7 +144,7 @@ class SocketManager
 	bool setupBodyFramingAndLimits(int fd, ClientState &st);
 	void finalizeHeaderPhaseTransition (int fd, ClientState &st, size_t hdrEndPos);
 	bool tryReadBody(int fd, ClientState &st);
-	void queueErrorAndClose(SocketManager &sm, int fd, int status, const std::string &title, const std::string &html);
+	void queueErrorAndClose(int fd, int status, const std::string &title, const std::string &html);
 	void finalizeRequestAndQueueResponse(int fd, ClientState &st);
 	bool tryFlushWrite(int fd, ClientState &st);
 
