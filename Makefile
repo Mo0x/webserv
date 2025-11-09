@@ -1,14 +1,14 @@
 NAME = ./webserv
 CXX = c++
 
-INCDIRS = ./includes
-CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 -I$(INCDIRS)
+INCDIRS = ./includes ./includes/legacy
+CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 $(addprefix -I,$(INCDIRS))
 
 SRCS = \
-	./srcs/main.cpp \
-	./srcs/cfg/Config.cpp \
-	./srcs/cfg/ConfigLexer.cpp \
-	./srcs/cfg/ConfigParser.cpp \
+        ./srcs/main.cpp \
+        ./srcs/cfg/Config.cpp \
+        ./srcs/cfg/ConfigLexer.cpp \
+        ./srcs/cfg/ConfigParser.cpp \
 	./srcs/server/Chunked.cpp \
 	./srcs/server/ServerSocket.cpp \
 	./srcs/server/SocketManager.cpp \
@@ -16,10 +16,13 @@ SRCS = \
 	./srcs/server/SocketManagerPost.cpp \
 	./srcs/server/Response.cpp \
 	./srcs/utils/file_utils.cpp \
-	./srcs/utils/request_parser.cpp \
-	./srcs/utils/utils.cpp
+        ./srcs/utils/request_parser.cpp \
+        ./srcs/utils/utils.cpp
 
 OBJS = $(SRCS:.cpp=.o)
+
+LEGACY_SRCS := $(wildcard srcs/legacy/*.cpp)
+LEGACY_OBJS := $(LEGACY_SRCS:.cpp=.o)
 
 all: $(NAME)
 

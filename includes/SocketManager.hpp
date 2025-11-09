@@ -57,6 +57,7 @@ struct ClientState
 	// pending response payload
 	std::string		writeBuffer;
 	bool			forceCloseAfterWrite;
+	bool			closing;
 };
 
 class SocketManager
@@ -114,19 +115,20 @@ class SocketManager
 	bool readIntoBuffer(int fd, ClientState &st);
 	bool readIntoClientBuffer(int fd); // probably to delete once the new handleClientRead works
 
-	bool locateHeaders(int fd, size_t &hdrEnd);
-	bool enforceHeaderLimits(int fd, size_t hdrEnd);
-	bool parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
-									const ServerConfig* &server,
-									std::string &methodUpper,
-									size_t &contentLength,
-									bool &hasTE);
-	bool processFirstTimeHeaders(int fd, const Request &req,
-									const ServerConfig &server,
-									const std::string &methodUpper,
-									bool hasTE,
-									size_t contentLength);
-	bool ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd);
+        // Legacy header/body pipeline helpers (preserved under srcs/legacy/).
+        bool locateHeaders(int fd, size_t &hdrEnd);
+        bool enforceHeaderLimits(int fd, size_t hdrEnd);
+        bool parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
+                                                                        const ServerConfig* &server,
+                                                                        std::string &methodUpper,
+                                                                        size_t &contentLength,
+                                                                        bool &hasTE);
+        bool processFirstTimeHeaders(int fd, const Request &req,
+                                                                        const ServerConfig &server,
+                                                                        const std::string &methodUpper,
+                                                                        bool hasTE,
+                                                                        size_t contentLength);
+        bool ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd);
 	void dispatchRequest(int fd, const Request &req,
 							const ServerConfig &server,
 							const std::string &methodUpper);
@@ -142,7 +144,7 @@ class SocketManager
 	bool setupBodyFramingAndLimits(int fd, ClientState &st);
 	void finalizeHeaderPhaseTransition (int fd, ClientState &st, size_t hdrEndPos);
 	bool tryReadBody(int fd, ClientState &st);
-	void queueErrorAndClose(SocketManager &sm, int fd, int status, const std::string &title, const std::string &html);
+	void queueErrorAndClose(int fd, int status, const std::string &title, const std::string &html);
 	void finalizeRequestAndQueueResponse(int fd, ClientState &st);
 	bool tryFlushWrite(int fd, ClientState &st);
 

@@ -1,4 +1,8 @@
-#include "ServerConfig.hpp"
+// LEGACY: retained for reference; not used in current pipeline.
+// Original file: srcs/cfg/ServerConfig.cpp
+// Last moved: 2025-02-15
+
+#include "legacy/legacy_ServerConfig.hpp"
 #include <algorithm>
 
 ServerConfig::ServerConfig()
