@@ -212,6 +212,7 @@ void SocketManager::handleNewConnection(int listen_fd)
 	st.maxBodyAllowed = 0;
 	st.writeBuffer.clear();
 	st.forceCloseAfterWrite = false;
+	st.closing = false;
 	// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
 
 	m_clients[client_fd] = st;
@@ -262,13 +263,27 @@ Response SocketManager::makeHtmlError(int code, const std::string& reason, const
 	return r;
 }
 
-void SocketManager::queueErrorAndClose(SocketManager &sm, int fd, int status,
-							   const std::string &title,
-							   const std::string &html)
+void SocketManager::queueErrorAndClose(int fd, int status,
+                                                           const std::string &title,
+                                                           const std::string &html)
 {
-	Response res = makeHtmlError(status, title, html);
-	res.close_connection = true;     // invalid headers → must close
-	sm.finalizeAndQueue(fd, res);
+        std::map<int, ClientState>::iterator it = m_clients.find(fd);
+        if (it == m_clients.end())
+        {
+                ClientState fresh = ClientState();
+                setPhase(fd, fresh, ClientState::READING_HEADERS, "queueErrorAndClose");
+                fresh.forceCloseAfterWrite = false;
+                fresh.closing = false;
+                m_clients[fd] = fresh;
+                it = m_clients.find(fd);
+        }
+        ClientState &st = it->second;
+        if (st.closing)
+                return;
+        st.closing = true;
+        Response res = makeHtmlError(status, title, html);
+        res.close_connection = true;     // invalid headers → must close
+        finalizeAndQueue(fd, res);
 }
 
 //new helper of readIntoClientBuffer that takes ClientState
@@ -569,6 +584,11 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
 			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 			{
+				st.closing = true;
+				st.recvBuffer.clear();
+#ifdef SHUT_RD
+				::shutdown(fd, SHUT_RD);
+#endif
 				Response err = makeHtmlError(413, "Payload Too Large",
 											"<h1>413 Payload Too Large</h1>");
 				finalizeAndQueue(fd, st.req, err, false, true);
@@ -696,6 +716,11 @@ void SocketManager::handleClientRead(int fd)
 		return ;
 
 	ClientState &st = it->second;
+
+	if (st.closing)
+	{
+	        return;
+	}
 
 	std::cerr << "[fd " << fd << "] enter handleClientRead phase=" << phaseToStr(st.phase)
 	          << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
@@ -925,11 +950,12 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 	const bool headers_complete = true;
 	const bool client_close = clientRequestedClose(req);
 
-	const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
-	res.close_connection = close_it;
+        const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
+        const bool force_close = close_it || st.closing;
+        res.close_connection = force_close;
 
-	st.writeBuffer = build_http_response(res);
-	st.forceCloseAfterWrite = close_it;
+        st.writeBuffer = build_http_response(res);
+        st.forceCloseAfterWrite = force_close;
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
 	tryFlushWrite(fd, st);
 }
@@ -945,17 +971,18 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 	const bool body_fully_consumed    = true;
 	const bool client_close           = true; // <- force close in no-context paths
 
-	const bool close_it = shouldCloseAfterThisResponse(
-		/*status_code*/ res.status_code,
-		headers_complete,
-		body_expected,
-		body_fully_consumed,
-		client_close
-	);
-	res.close_connection = close_it;
+        const bool close_it = shouldCloseAfterThisResponse(
+                /*status_code*/ res.status_code,
+                headers_complete,
+                body_expected,
+                body_fully_consumed,
+                client_close
+        );
+        const bool force_close = close_it || st.closing;
+        res.close_connection = force_close;
 
-	st.writeBuffer = build_http_response(res);
-	st.forceCloseAfterWrite = close_it;
+        st.writeBuffer = build_http_response(res);
+        st.forceCloseAfterWrite = force_close;
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
 	tryFlushWrite(fd, st);
 }
@@ -989,20 +1016,21 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 		st.writeBuffer.erase(0, static_cast<size_t>(n));
 	}
 
-	clearPollout(fd);
-	st.writeBuffer.clear();
+        clearPollout(fd);
+        st.writeBuffer.clear();
 
-	if (st.forceCloseAfterWrite)
-	{
-		handleClientDisconnect(fd);
-		return false;
-	}
+        if (st.forceCloseAfterWrite || st.closing)
+        {
+                handleClientDisconnect(fd);
+                return false;
+        }
 
-	st.forceCloseAfterWrite = false;
-	resetRequestState(fd);
-	st.req = Request();
-	st.bodyBuffer.clear();
-	st.isChunked = false;
+        st.forceCloseAfterWrite = false;
+        st.closing = false;
+        resetRequestState(fd);
+        st.req = Request();
+        st.bodyBuffer.clear();
+        st.isChunked = false;
 	st.contentLength = 0;
 	st.maxBodyAllowed = 0;
 	st.chunkDec = ChunkedDecoder();

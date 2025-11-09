@@ -93,7 +93,7 @@ bool SocketManager::locateHeaders(int fd, size_t &hdrEnd)
         if (m_clientBuffers[fd].size() > HEADER_CAP &&
                 m_clientBuffers[fd].find("\r\n\r\n") == std::string::npos)
         {
-                queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+                queueErrorAndClose(fd, 431, "Request Header Fields Too Large",
                                                    "<h1>431 Request Header Fields Too Large</h1>");
                 return false;
         }
@@ -115,7 +115,7 @@ bool SocketManager::enforceHeaderLimits(int fd, size_t hdrEnd)
         // total header block size (up to but not including the blank line)
         if (hdrEnd > HEADER_CAP)
         {
-                queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+                queueErrorAndClose(fd, 431, "Request Header Fields Too Large",
                                                    "<h1>431 Request Header Fields Too Large</h1>");
                 return false;
         }
@@ -129,7 +129,7 @@ bool SocketManager::enforceHeaderLimits(int fd, size_t hdrEnd)
                         break;
                 if (nl - pos > MAX_HEADER_LINE)
                 {
-                        queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+                        queueErrorAndClose(fd, 431, "Request Header Fields Too Large",
                                                            "<h1>431 Request Header Fields Too Large</h1>");
                         return false;
                 }
@@ -148,7 +148,7 @@ bool SocketManager::enforceHeaderLimits(int fd, size_t hdrEnd)
                 ++lines;
                 if (lines > MAX_HEADER_LINES)
                 {
-                        queueErrorAndClose(*this, fd, 431, "Request Header Fields Too Large",
+                        queueErrorAndClose(fd, 431, "Request Header Fields Too Large",
                                                            "<h1>431 Request Header Fields Too Large</h1>");
                         return false;
                 }
@@ -161,13 +161,13 @@ bool SocketManager::enforceHeaderLimits(int fd, size_t hdrEnd)
         countHeaderNames(headerBlock, nameCounts);
         if (nameCounts["content-length"] > 1)
         {
-                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                queueErrorAndClose(fd, 400, "Bad Request",
                                                    "<h1>400 Bad Request</h1><p>Multiple Content-Length headers</p>");
                 return false;
         }
         if (nameCounts["content-length"] >= 1 && nameCounts["transfer-encoding"] >= 1)
         {
-                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                queueErrorAndClose(fd, 400, "Bad Request",
                                                    "<h1>400 Bad Request</h1><p>Both Content-Length and Transfer-Encoding present</p>");
                 return false;
         }
@@ -197,7 +197,7 @@ bool SocketManager::parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
         }
         catch (...)
         {
-                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                queueErrorAndClose(fd, 400, "Bad Request",
                                                    "<h1>400 Bad Request</h1><p>No server mapping for this connection</p>");
                 return false;
         }
@@ -209,7 +209,7 @@ bool SocketManager::parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
         int framingErr = validateBodyFraming(req.headers, contentLength, hasTE);
         if (framingErr != 0)
         {
-                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                queueErrorAndClose(fd, 400, "Bad Request",
                                                    "<h1>400 Bad Request</h1><p>Invalid Content-Length / Transfer-Encoding</p>");
                 return false;
         }
@@ -229,7 +229,7 @@ bool SocketManager::parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
                         // Only "chunked" is supported, no stacked encodings
                         if (teVal != "chunked")
                         {
-                                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                                queueErrorAndClose(fd, 400, "Bad Request",
                                                                    "<h1>400 Bad Request</h1><p>Unsupported Transfer-Encoding</p>");
                                 return false;
                         }
@@ -239,7 +239,7 @@ bool SocketManager::parseAndValidateRequest(int fd, size_t hdrEnd, Request &req,
         // ---- policy: client_max_body_size (skip when chunked) -------------------
         if (!hasTE && server->client_max_body_size > 0 && contentLength > server->client_max_body_size)
         {
-                queueErrorAndClose(*this, fd, 413, "Payload Too Large",
+                queueErrorAndClose(fd, 413, "Payload Too Large",
                                                    "<h1>413 Payload Too Large</h1>");
                 return false;
         }
@@ -378,7 +378,7 @@ bool SocketManager::ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd)
         // 413 streaming cap
         if (m_allowedMaxBody[fd] > 0 && bodyBytes > m_allowedMaxBody[fd])
         {
-                queueErrorAndClose(*this, fd, 413, "Payload Too Large",
+                queueErrorAndClose(fd, 413, "Payload Too Large",
                                                    "<h1>413 Payload Too Large</h1>");
                 return false;
         }
@@ -386,7 +386,7 @@ bool SocketManager::ensureBodyReady(int fd, size_t hdrEnd, size_t &requestEnd)
         // 400 if body exceeds declared Content-Length
         if (m_expectedContentLen[fd] > 0 && bodyBytes > m_expectedContentLen[fd])
         {
-                queueErrorAndClose(*this, fd, 400, "Bad Request",
+                queueErrorAndClose(fd, 400, "Bad Request",
                                                    "<h1>400 Bad Request</h1><p>Body exceeds Content-Length</p>");
                 return false;
         }
