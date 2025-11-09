@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   MultipartParser.hpp                                :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: wkeiser <wkeiser@student.42mulhouse.fr>    +#+  +:+       +#+        */
+/*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 21:04:40 by wkeiser           #+#    #+#             */
-/*   Updated: 2025/04/13 21:04:41 by wkeiser          ###   ########.fr       */
+/*   Updated: 2025/11/09 20:39:37 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -42,6 +42,7 @@ private:
 
     std::string _body;
     std::string _contentType;
+    //init comment
 };
 
 #endif
