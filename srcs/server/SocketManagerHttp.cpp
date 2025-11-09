@@ -571,6 +571,14 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
           << " body=" << st.bodyBuffer.size() << std::endl;
 }
 
+bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
+{
+	//1) we only act for request that have bodies
+	if (st.req.method != "POST")
+
+	return false;
+}
+
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 {
 		// 1) do we have full headers?
@@ -604,6 +612,10 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
 
+	// 6) MultiPart detection and init
+
+	if (!doTheMultiPartThing(fd, st))
+		return false;
 	// NOW it’s meaningful to log framing:
 	std::cerr << "[fd " << fd << "] framing: isChunked="
 			<< (st.isChunked?1:0) << " contentLength=" << st.contentLength << std::endl;

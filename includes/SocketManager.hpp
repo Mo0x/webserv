@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/07 15:54:49 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/09 21:10:19 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,12 +18,23 @@
 #include "Config.hpp"
 #include "request_parser.hpp"
 #include "Chunked.hpp"
+#include "FileUploadHandler.hpp"
+#include "MultipartStreamParser.hpp"
 #include <vector>
 #include <poll.h>
 #include <map>
 #include <string>
 #include <set>
 
+struct MultipartCtx
+{
+    FileUploadHandler          file;
+    std::vector<std::string>   savedNames;
+    std::string                fieldName, safeFilename, fieldBuffer, pendingWrite;
+    size_t                     partBytes, partCount, totalDecoded;
+    bool                       writingFile;
+    MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), writingFile(false) {}
+};
 struct ClientState
 {
 	enum Phase
@@ -58,6 +69,19 @@ struct ClientState
 	std::string		writeBuffer;
 	bool			forceCloseAfterWrite;
 	bool			closing;
+	//Multi-Part
+	enum MpState
+	{
+		MP_START,
+		MP_PARSING,
+		MP_DONE,
+		MP_ERROR
+	};
+
+	bool isMultipart;
+	MpState	mpState;
+	MultipartStreamParser mp;
+	MultipartCtx mpCtx;
 };
 
 class SocketManager
@@ -157,7 +181,8 @@ class SocketManager
                             ClientState &st,
                             ClientState::Phase newp,
                             const char* where);
-	
+	//wiring multipart
+	bool doTheMultiPartThing(int fd, ClientState &st);
 
 };
 

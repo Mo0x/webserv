@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/09 18:21:38 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/09 20:55:05 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -755,10 +755,10 @@ void SocketManager::handleClientRead(int fd)
 			{
 				// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
 				// otherwise treat as incomplete body.
-                                if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
-                                {
-                                        setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
-                                }
+				if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
+				{
+						setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
+				}
 				else
 				{
 					Response err = makeHtmlError(400, "Bad Request",
@@ -800,7 +800,6 @@ void SocketManager::handleClientRead(int fd)
 				// - if bad request: queue error response + set st.phase = SENDING_RESPONSE, return false
 				return; // need more data or we already have an error
 		}
-
 		// If we just transitioned to READING_BODY, try to consume immediately
 		if (st.phase == ClientState::READING_BODY)
 		{
@@ -1080,152 +1079,3 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	return true;
 }
 
-
-//previous run funciton now its cleaner and divided in multiple functions.
-
-/* void SocketManager::run()
-{
-	initPoll();
-	std::cout << "Starting poll() loop on " << m_pollfds.size() << " sockets." << std::endl;
-
-	while (true)
-	{
-		std::cout << "[DEBUG] Polling..." << std::endl;
-		int ret = poll(&m_pollfds[0], m_pollfds.size(), -1);
-		std::cout << "[DEBUG] poll() returned: " << ret << std::endl;
-
-		if (ret < 0)
-		{
-			perror("poll() failed");
-			break;
-		}
-
-		for (size_t i = 0; i < m_pollfds.size(); ++i)
-		{
-			int fd = m_pollfds[i].fd;
-
-			std::cout << "[DEBUG] fd: " << fd
-					  << " events: " << m_pollfds[i].events
-					  << " revents: " << m_pollfds[i].revents << std::endl;
-
-			if (m_pollfds[i].revents & POLLIN)
-			{
-				if (m_serverFds.count(fd))
-				{
-					int client_fd = accept(fd, NULL, NULL);
-					if (client_fd >= 0)
-					{
-						std::cout << "Accepted new client: fd " << client_fd << std::endl;
-					
-						if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
-						{
-							perror("fcntl(F_SETFL) failed");
-							close(client_fd);
-							continue;
-						}
-					
-						struct pollfd client_poll;
-						client_poll.fd = client_fd;
-						client_poll.events = POLLIN;
-						client_poll.revents = 0;
-						m_pollfds.push_back(client_poll);
-					
-						m_clientBuffers[client_fd] = "";
-						std::cout << "[DEBUG] Client fd " << client_fd << " added to poll()" << std::endl;
-					}
-					else
-					{
-						perror("accept() failed");
-					}
-				}
-				else
-				{
-					char buffer[1024];
-					int bytes = recv(fd, buffer, sizeof(buffer), 0);
-
-					if (bytes <= 0)
-					{
-						std::cout << "Client disconnected: fd " << fd << std::endl;
-						close(fd);
-						m_clientBuffers.erase(fd);
-						m_pollfds.erase(m_pollfds.begin() + i);
-						--i;
-					}
-					else
-					{
-						m_clientBuffers[fd].append(buffer, bytes);
-
-						if (m_clientBuffers[fd].find("\r\n\r\n") != std::string::npos)
-						{
-							Request req = parseRequest(m_clientBuffers[fd]);
-
-							std::cout << "[PARSED] Method: " << req.method << "\n";
-							std::cout << "[PARSED] Path: " << req.path << "\n";
-							std::cout << "[PARSED] Version: " << req.http_version << "\n";
-
-							for (std::map<std::string, std::string>::iterator it = req.headers.begin();
-								it != req.headers.end(); ++it)
-								std::cout << "[HEADER] " << it->first << ": " << it->second << "\n";
-
-							std::string basePath = "./www";
-							std::string filePath = req.path;
-							if (filePath == "/")
-								filePath = "/index.html";
-							std::string fullPath = basePath + filePath;
-							if (!isPathSafe(basePath, fullPath))
-							{
-								std::string body = "<h1>403 Forbidden</h1>";
-								std::ostringstream oss;
-								oss << "HTTP/1.1 403 Forbidden\r\n";
-								oss << "Content-Length: " << body.size() << "\r\n";
-								oss << "Content-Type: text/html\r\n\r\n";
-								oss << body;
-								std::string response = oss.str();
-								send(fd, response.c_str(), response.size(), 0);
-								close(fd);
-								m_clientBuffers.erase(fd);
-								m_pollfds.erase(m_pollfds.begin() + i);
-								--i;
-								continue;
-							}
-							std::string response;
-							if (file_utils::exists(fullPath))
-							{
-								std::string body = file_utils::readFile(fullPath);								std::ostringstream oss;
-								oss << "HTTP/1.1 200 OK\r\n";
-								oss << "Content-Length: " << body.size() << "\r\n";
-								oss << "Content-Type: text/html\r\n"; // TODO: detect MIME type
-								oss << "\r\n";
-								oss << body;
-								response = oss.str();
-							}
-							else
-							{
-								std::string body = "<h1>404 Not Found</h1>";
-								std::ostringstream oss;
-								oss << "HTTP/1.1 404 Not Found\r\n";
-								oss << "Content-Length: " << body.size() << "\r\n";
-								oss << "Content-Type: text/html\r\n";
-								oss << "\r\n";
-								oss << body;
-								response = oss.str();
-							}
-
-							send(fd, response.c_str(), response.size(), 0);
-
-							close(fd);
-							m_clientBuffers.erase(fd);
-							m_pollfds.erase(m_pollfds.begin() + i);
-							--i;
-						}
-						else
-						{
-							std::cout << "Received partial data from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
-						}
-					}
-				}
-			}
-		}
-	}
-}
- */
