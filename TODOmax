@@ -9,3 +9,13 @@ test
 
 
 https://beej.us/guide/bgnet/
+
+Introduce an HttpRequestHandler (recommended later)
+
+Idea:
+
+SocketManager stays focused on I/O and per-fd lifecycle (poll, recv, send, disconnect).
+
+A new "HTTP brain" object handles parsing state and deciding responses.
+
+Something like:
