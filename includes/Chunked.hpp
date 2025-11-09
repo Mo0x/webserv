@@ -36,6 +36,9 @@ class ChunkedDecoder
 	void handleDataState(const char *buf, size_t len, size_t &i, size_t max_body_size);
 	void handleCrlfState(const char *buf, size_t len, size_t &i);
 	void handleTrailersState(const char *buf, size_t len, size_t &i);
+	void drainTo(std::string &dst);  // append internal decoded data to dst and clear it
+	bool hasError() const;           // true if a fatal parse error occurred
+
 };
 
 #endif

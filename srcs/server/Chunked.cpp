@@ -1,5 +1,6 @@
 #include "Chunked.hpp"
 #include "utils.hpp"
+#include <iostream>
 
 ChunkedDecoder::ChunkedDecoder() :
 	m_state(S_SIZE), 
@@ -195,15 +196,30 @@ void ChunkedDecoder::handleTrailersState(const char *buf, size_t len, size_t &i)
 			m_line.clear();
 
 			//if line_no_crlf is empty, its the end of the chunk ! we done
-			if (line_no_crlf.size() == 0)
-			{
-				m_state = S_DONE;
-				break ;
-			}
+                        if (line_no_crlf.size() == 0)
+                        {
+                                m_state = S_DONE;
+                                std::cerr << "[chunked] reached S_DONE" << std::endl;
+                                break ;
+                        }
 			// else: it's just a trailer header (e.g. "Checksum: deadbeef")
 			// ignore it and keep looping to read more trailers
 		}
 	}
+}
+
+void ChunkedDecoder::drainTo(std::string &dst)
+{
+	if (!m_data.empty())
+	{
+		dst.append(m_data);
+		m_data.clear();
+	}
+}
+
+bool ChunkedDecoder::hasError() const
+{
+	return m_state == S_ERROR; // uses your private enum/state
 }
 
 size_t ChunkedDecoder::feed(const char *buf, size_t len, size_t max_body_size)

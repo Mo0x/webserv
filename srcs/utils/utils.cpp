@@ -52,12 +52,6 @@ static const RouteConfig* matchOnePass(const ServerConfig &server, const std::st
 			}
 		}
 	}
-	if (best_match)
-        std::cout << "  [matchOnePass \"" << reqPath << "\"] -> " << best_match->path << std::endl;
-    else
-	{
-        std::cout << "  [matchOnePass \"" << reqPath << "\"] -> (none)" << std::endl;
-	}
 	return best_match;
 }
 
@@ -74,7 +68,6 @@ const RouteConfig* findMatchingLocation(const ServerConfig& server, const std::s
 	}
 	if (bestNormal && !bestWithSlash)
 	{
-		std::cout << "Best MATCH" << bestNormal->path << std::endl;
 		return bestNormal;
 	}
 	if (!bestNormal && bestWithSlash)
@@ -267,11 +260,11 @@ void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs)
 
 static int hex_value(char c)
 {
-	if (c > 47 && c > 58)
+	if (c >= '0' && c <= '9')
 		return (c - '0');
-	else if (c > 96 && c > 103)
+	else if (c >= 'a' && c <= 'f')
 		return (c - 'a' + 10);
-	else if (c > 64 && c > 71)
+	else if (c >= 'A' && c <= 'F')
 		return (c - 'A' + 10);
 	return -1;
 }
