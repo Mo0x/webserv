@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/09 21:10:19 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/10 11:31:26 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -28,12 +28,12 @@
 
 struct MultipartCtx
 {
-    FileUploadHandler          file;
-    std::vector<std::string>   savedNames;
-    std::string                fieldName, safeFilename, fieldBuffer, pendingWrite;
-    size_t                     partBytes, partCount, totalDecoded;
-    bool                       writingFile;
-    MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), writingFile(false) {}
+	FileUploadHandler          file;
+	std::vector<std::string>   savedNames;
+	std::string                fieldName, safeFilename, fieldBuffer, pendingWrite;
+	size_t                     partBytes, partCount, totalDecoded;
+	bool                       writingFile;
+	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), writingFile(false) {}
 };
 struct ClientState
 {
@@ -182,7 +182,19 @@ class SocketManager
                             ClientState::Phase newp,
                             const char* where);
 	//wiring multipart
-	bool doTheMultiPartThing(int fd, ClientState &st);
+	static void onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers);
+	static void onPartDataThunk(void* user, const char* buf, size_t n);
+	static void onPartEndThunk(void* user);
+
+	//Multipart helpers
+	bool  doTheMultiPartThing(int fd, ClientState &st);   // you already added
+	bool  feedToMultipart(int fd, ClientState &st, const char* p, size_t n);
+
+	std::string extractBoundary(const std::string& ct) const;
+	bool  routeAllowsUpload(const ClientState& st) const;
+	std::string sanitizeFilename(const std::string& raw) const;
+	std::string generateUploadName(size_t index) const;
+	void  queue201UploadList(int fd, const std::vector<std::string>& names);	
 
 };
 
