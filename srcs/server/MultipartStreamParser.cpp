@@ -1,6 +1,7 @@
 #include "MultipartStreamParser.hpp"
 #include "SocketManager.hpp"
 #include <algorithm>
+#include "utils.hpp"
 
 MultipartStreamParser::MultipartStreamParser() :
 	m_st(MultipartStreamParser::S_ERROR),
@@ -164,6 +165,76 @@ bool MultipartStreamParser::consumeToFirstBoundary()
 	return true; // progress made
 }
 
+/*
+	Target behaviora:
+	Accumulate header lines for the current part until \r\n\r\n.
+	Enforce a per-part header cap (e.g., 32–64 KiB).
+	Parse lines into m_curHeaders (lowercased keys, trimmed values).
+	Fire m_onBegin(m_user, m_curHeaders) once.
+	Transition to S_DATA and clear any temporary header buffer.
+*/
+
+MultipartStreamParser::HRes MultipartStreamParser::parsePartHeaders(std::string::size_type &outConsumed) // read headers up to CRLFCRLF into m_curHeaders
+{
+	static const std::string::size_type PART_HEADER_CAP      = 64 * 1024; // 64 KiB
+	static const std::string::size_type MAX_PART_HEADER_LINE =  8 * 1024; // 8 KiB
+	std::string::size_type p = m_buf.find("\r\n\r\n");
+	if (p == std::string::npos)
+	{
+		if (m_buf.size() > PART_HEADER_CAP)
+			return H_ERR;
+		else
+			return H_MORE;
+	}
+	std::string block = m_buf.substr(0, p);
+	outConsumed = p + 4;
+	m_curHeaders.clear();
+	/*
+	For each non-empty line:
+	Find first ':'. If missing → H_ERR.
+	name = line[0..colon-1], value = line[colon+1..end].
+	Trim leading/trailing spaces of value.
+	Lowercase ASCII name (so Content-Disposition → content-disposition).
+	Insert into m_curHeaders[name] = value. (If duplicate, last one wins—fine here.)
+	*/
+	std::string::size_type pos = 0;
+	std::string::size_type nl;
+	while (pos < block.size())
+	{
+		nl = block.find("\r\n", pos);
+		if (nl == std::string::npos)
+			nl = block.size();
+		std::string::size_type len = nl - pos;
+		if (len > MAX_PART_HEADER_LINE)
+			return H_ERR;
+		std::string line = block.substr(pos, len);
+		pos = (nl == block.size()) ? nl : nl + 2;
+		if (line.empty())
+			continue;
+		std::string::size_type colon = line.find(':');
+		if (colon == std::string::npos)
+			return H_ERR;
+		std::string name = trimCopy(line.substr(0, colon));
+		std::string value = trimCopy(line.substr(colon + 1));
+		m_curHeaders[toLowerCopy(name)] = value;
+	}
+	return H_OK;
+}
+
+bool MultipartStreamParser::findNextBoundary(std::string::size_type &k, bool &isClosing)
+{
+	std::string::size_type needleClose = "\r\n" + m_delim;
+
+}
+
+bool MultipartStreamParser::emitDataChunk(size_t upto)
+{
+	//Call m_onData(m_user, m_buf.data(), upto) (if upto > 0 and m_onData isn’t null).
+	//Erase the first upto bytes from m_buf.
+	//Return true if it emitted anything (so feed() can set progress = true), false otherwise.
+}
+
+
 MultipartStreamParser::Result MultipartStreamParser::feed(const char* data, size_t n)
 {
 	if (m_st == S_DONE)
@@ -180,18 +251,43 @@ MultipartStreamParser::Result MultipartStreamParser::feed(const char* data, size
 		{
 			case S_PREAMBLE :
 			/*helper that will scan first boundary, if we consume anything of advance state, progress = true*/
+				progress = consumeToFirstBoundary();
 				break;
 			case S_HEADERS :
-			// if parsePartHeaders() found CRLFCRLF within cap:
-			//   m_onBegin(...); m_st = S_DATA; progress = true;
-			// else if cap exceeded -> enterError() and return ERR;
+			{
+				std::string::size_type consumed = 0;
+				HRes h = parsePartHeaders(consumed);
+				if (h == H_MORE)
+				{
+					// No full CRLFCRLF yet; no progress this iteration.
+					break;
+				}
+				if (h == H_ERR)
+				{
+					enterError();
+					return ERR;
+				}
+				// H_OK:
+				// 1) fire callback exactly once per part
+				m_onBegin(m_user, m_curHeaders);
+
+				// 2) drop header block + "\r\n\r\n"
+				m_buf.erase(0, consumed);
+
+				// 3) advance
+				m_st = S_DATA;
+				progress = true;
 				break;
+			}
 			case S_DATA :
+			{
 			                // find next boundary; emit data before it via m_onData
                 // regular boundary -> onEnd(); m_st = S_HEADERS; progress = true;
                 // closing boundary -> onEnd(); m_st = S_DONE; return DONE;
                 // if partial boundary at tail, keep overlap and break loop
+				emitDataChunk(size_t upto);
 				break;
+			}
 			case S_DONE :
 				return DONE;
 				break;

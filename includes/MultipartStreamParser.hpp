@@ -15,6 +15,9 @@ class MultipartStreamParser
 					DONE,
 					ERR };
 
+	
+	
+
 	MultipartStreamParser();
 
 	void reset(const std::string& boundary,
@@ -33,6 +36,11 @@ class MultipartStreamParser
 			S_DATA,
 			S_DONE,
 			S_ERROR };
+
+	enum HRes{	H_MORE,
+				H_OK,
+				H_ERR };
+
 	S                  m_st;
 	std::string        m_boundary;   // e.g. "----WebKit..."
 	std::string        m_delim;      // "--" + boundary
@@ -45,9 +53,15 @@ class MultipartStreamParser
 	PartEndCb          m_onEnd;
 	void*              m_user;
 
+	// S_PREAMBLE
 	bool consumeToFirstBoundary();
-	bool parsePartHeaders(); // read headers up to CRLFCRLF into m_curHeaders
+	// S_HEADERS
+	HRes parsePartHeaders(std::string::size_type &outConsumed); // read headers up to CRLFCRLF into m_curHeaders
+	// S_DATA
 	bool emitDataChunk(size_t upto);
+	bool findNextBoundary(std::string::size_type &k, bool &isClosing);
+
+	//S_ERROR
 	void enterError();
 };
 
