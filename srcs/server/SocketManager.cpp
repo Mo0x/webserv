@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/11 18:24:07 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/11 18:28:23 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1014,21 +1014,21 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 		st.writeBuffer.erase(0, static_cast<size_t>(n));
 	}
 
-        clearPollout(fd);
-        st.writeBuffer.clear();
+	clearPollout(fd);
+	st.writeBuffer.clear();
 
-        if (st.forceCloseAfterWrite || st.closing)
-        {
-                handleClientDisconnect(fd);
-                return false;
-        }
+	if (st.forceCloseAfterWrite || st.closing)
+	{
+			handleClientDisconnect(fd);
+			return false;
+	}
 
-        st.forceCloseAfterWrite = false;
-        st.closing = false;
-        resetRequestState(fd);
-        st.req = Request();
-        st.bodyBuffer.clear();
-        st.isChunked = false;
+	st.forceCloseAfterWrite = false;
+	st.closing = false;
+	resetRequestState(fd);
+	st.req = Request();
+	st.bodyBuffer.clear();
+	st.isChunked = false;
 	st.contentLength = 0;
 	st.maxBodyAllowed = 0;
 	st.chunkDec = ChunkedDecoder();
