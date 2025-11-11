@@ -40,6 +40,10 @@ class MultipartStreamParser
 	enum HRes{	H_MORE,
 				H_OK,
 				H_ERR };
+	enum DRes{	D_MORE,
+				D_OK,
+				D_DONE,
+				D_ERR };
 
 	S                  m_st;
 	std::string        m_boundary;   // e.g. "----WebKit..."
@@ -60,6 +64,7 @@ class MultipartStreamParser
 	// S_DATA
 	bool emitDataChunk(size_t upto);
 	bool findNextBoundary(std::string::size_type &k, bool &isClosing);
+	DRes s_dataFlow(bool &progress);
 
 	//S_ERROR
 	void enterError();

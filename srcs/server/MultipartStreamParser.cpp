@@ -29,6 +29,13 @@ static bool isValidBoundary(const std::string &boundary)
 	return true;
 }
 
+void MultipartStreamParser::enterError()
+{
+	m_st = S_ERROR;
+	m_buf.clear();
+	m_curHeaders.clear();
+}
+
 /*
 Take a boundary and callbacks for this specific HTTP request.
 Reinitialize the parser so the next feed() starts from a clean slate at S_PREAMBLE.
@@ -258,6 +265,82 @@ bool MultipartStreamParser::emitDataChunk(size_t upto)
 	//Call m_onData(m_user, m_buf.data(), upto) (if upto > 0 and m_onData isn’t null).
 	//Erase the first upto bytes from m_buf.
 	//Return true if it emitted anything (so feed() can set progress = true), false otherwise.
+	if (upto == 0)
+		return false;
+	if (upto > m_buf.size())
+		upto = m_buf.size();
+	if (m_onData)
+		m_onData(m_user, m_buf.data(), static_cast<size_t>(upto));
+	m_buf.erase(0, upto);
+	return true;
+}
+
+MultipartStreamParser::DRes MultipartStreamParser::s_dataFlow(bool &progress)
+{
+	progress = false;
+
+	// 1) Find the next boundary (must be preceded by CRLF in S_DATA)
+	std::string::size_type k = 0;
+	bool isClosing = false;
+	if (!findNextBoundary(k, isClosing))
+	{
+		// No boundary visible yet → emit safe payload except a tail overlap
+		const std::string::size_type overlap =
+			static_cast<std::string::size_type>(std::max<size_t>(m_boundary.size() + 8, 256u)); // \r\n--<b>--\r\n
+
+		std::string::size_type emitUpto = 0;
+		if (m_buf.size() > overlap)
+			emitUpto = m_buf.size() - (overlap - 1);
+
+		if (emitUpto > 0)
+		{
+			if (emitDataChunk(emitUpto)) { progress = true; return D_OK; }
+		}
+		// possible split boundary at tail → need more bytes
+		return D_MORE;
+	}
+
+	// 2) Boundary candidate at index k (k points to the CRLF before "--<b>")
+	if (k > 0)
+	{
+		if (emitDataChunk(k)) progress = true; // emit payload BEFORE the CRLF
+	}
+
+	// Now buffer begins with the boundary line: "\r\n--<b>" or "\r\n--<b>--"
+	const std::string::size_type need =
+		isClosing ? (2 + m_delimClose.size() + 2)   // \r\n + --<b>-- + \r\n
+				: (2 + m_delim.size()     + 2);  // \r\n + --<b>   + \r\n
+
+	if (m_buf.size() < need)
+	{
+		// Partial boundary line split across feeds → wait
+		return D_MORE;
+	}
+
+	// 3) Validate the trailing CRLF at the end of the boundary line
+	const std::string::size_type head =
+		isClosing ? (2 + m_delimClose.size())
+				: (2 + m_delim.size());
+
+	if (m_buf.compare(head, 2, "\r\n") != 0)
+		return D_ERR; // malformed line
+
+	// 4) End current part, consume the boundary line, and transition
+	if (m_onEnd) m_onEnd(m_user);
+
+	m_buf.erase(0, need);
+
+	if (isClosing)
+	{
+		m_st = S_DONE;
+		return D_DONE;
+	}
+	else
+	{
+		m_st = S_HEADERS;
+		progress = true;
+		return D_OK;
+	}
 }
 
 
@@ -311,13 +394,26 @@ MultipartStreamParser::Result MultipartStreamParser::feed(const char* data, size
                 // regular boundary -> onEnd(); m_st = S_HEADERS; progress = true;
                 // closing boundary -> onEnd(); m_st = S_DONE; return DONE;
                 // if partial boundary at tail, keep overlap and break loop
-				emitDataChunk(size_t upto);
+				bool did = false;
+				DRes r = s_dataFlow(did);
+				if (r == D_ERR)
+				{
+					enterError();
+					return ERR;
+				}
+				if (r == D_DONE)
+					return DONE;
+				if (r == D_OK)
+					progress = true;
+				if (r == D_MORE)
+					break;
 				break;
 			}
 			case S_DONE :
 				return DONE;
 				break;
 			case S_ERROR :
+				enterError();
 				return ERR;
 				break;
 			default :
