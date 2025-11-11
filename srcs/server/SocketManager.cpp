@@ -210,12 +210,18 @@ void SocketManager::handleNewConnection(int listen_fd)
 	st.isChunked      = false;
 	st.contentLength  = 0;
 	st.maxBodyAllowed = 0;
-	st.writeBuffer.clear();
-	st.forceCloseAfterWrite = false;
-	st.closing = false;
-	// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
+        st.writeBuffer.clear();
+        st.forceCloseAfterWrite = false;
+        st.closing = false;
+        st.isMultipart = false;
+        st.multipartInit = false;
+        st.multipartBoundary.clear();
+        st.mpState = ClientState::MP_START;
+        st.mp = MultipartStreamParser();
+        st.mpCtx = MultipartCtx();
+        // If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
 
-	m_clients[client_fd] = st;
+        m_clients[client_fd] = st;
 
 	// If you track per-fd pending-write flags/queues, clear them here to avoid
 	// the "skip read: pending write" early-return on fresh connections.
@@ -1027,13 +1033,19 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 	st.closing = false;
 	resetRequestState(fd);
 	st.req = Request();
-	st.bodyBuffer.clear();
-	st.isChunked = false;
-	st.contentLength = 0;
-	st.maxBodyAllowed = 0;
-	st.chunkDec = ChunkedDecoder();
-	setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
-	return true;
+        st.bodyBuffer.clear();
+        st.isChunked = false;
+        st.contentLength = 0;
+        st.maxBodyAllowed = 0;
+        st.chunkDec = ChunkedDecoder();
+        st.isMultipart = false;
+        st.multipartInit = false;
+        st.multipartBoundary.clear();
+        st.mpState = ClientState::MP_START;
+        st.mp = MultipartStreamParser();
+        st.mpCtx = MultipartCtx();
+        setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+        return true;
 }
 
 bool SocketManager::shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const

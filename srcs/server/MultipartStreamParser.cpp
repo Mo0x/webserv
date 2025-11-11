@@ -422,3 +422,8 @@ MultipartStreamParser::Result MultipartStreamParser::feed(const char* data, size
 	}
 	return MORE;
 }
+
+int MultipartStreamParser::mp_state() const
+{
+        return static_cast<int>(m_st);
+}
