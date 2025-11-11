@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/09 20:55:05 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/11 18:24:07 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -662,7 +662,6 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
                 setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
                 return true;
         }
-
 	// Need more bytes
 	return false;
 }

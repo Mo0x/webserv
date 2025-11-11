@@ -616,7 +616,6 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 
 	if (!doTheMultiPartThing(fd, st))
 		return false;
-	// NOW it’s meaningful to log framing:
 	std::cerr << "[fd " << fd << "] framing: isChunked="
 			<< (st.isChunked?1:0) << " contentLength=" << st.contentLength << std::endl;
 
