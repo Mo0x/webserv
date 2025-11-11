@@ -20,15 +20,17 @@ class MultipartStreamParser
 
 	MultipartStreamParser();
 
-	void reset(const std::string& boundary,
-			PartBeginCb onBegin,
-			PartDataCb  onData,
-			PartEndCb   onEnd,
-			void* user);
+        void reset(const std::string& boundary,
+                        PartBeginCb onBegin,
+                        PartDataCb  onData,
+                        PartEndCb   onEnd,
+                        void* user);
 
-	Result feed(const char* data, size_t n);  // body bytes only (unchunked)
+        Result feed(const char* data, size_t n);  // body bytes only (unchunked)
 
-	private:
+        int mp_state() const;
+
+        private:
 	// Minimal Finite State Machine + rolling buffer
 	enum S {
 			S_PREAMBLE,

@@ -79,9 +79,32 @@ struct ClientState
 	};
 
 	bool isMultipart;
+	bool multipartInit;
+	std::string multipartBoundary;
 	MpState	mpState;
 	MultipartStreamParser mp;
 	MultipartCtx mpCtx;
+
+	ClientState()
+		: phase(READING_HEADERS),
+		  recvBuffer(),
+		  req(),
+		  isChunked(false),
+		  contentLength(0),
+		  maxBodyAllowed(0),
+		  bodyBuffer(),
+		  chunkDec(),
+		  writeBuffer(),
+		  forceCloseAfterWrite(false),
+		  closing(false),
+		  isMultipart(false),
+		  multipartInit(false),
+		  multipartBoundary(),
+		  mpState(MP_START),
+		  mp(),
+		  mpCtx()
+	{
+	}
 };
 
 class SocketManager
@@ -160,10 +183,11 @@ class SocketManager
 	bool clientHasPendingWrite(const ClientState &st) const;
 
 	bool tryParseHeaders(int fd, ClientState &st);
-	bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
-	Response makeHtmlError(int code, const std::string& reason, const std::string& html);
-	bool parseRawHeadersIntoRequest(int fd, ClientState &st, size_t hdrEndPos);
-	bool applyRoutePolicyAfterHeaders(int fd, ClientState &st);
+        bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
+        Response makeHtmlError(int code, const std::string& reason, const std::string& html);
+        bool parseRawHeadersIntoRequest(int fd, ClientState &st, size_t hdrEndPos);
+        bool detectMultipartBoundary(int fd, ClientState &st);
+        bool applyRoutePolicyAfterHeaders(int fd, ClientState &st);
 	bool badRequestAndQueue(int fd, ClientState &st);
 	bool setupBodyFramingAndLimits(int fd, ClientState &st);
 	void finalizeHeaderPhaseTransition (int fd, ClientState &st, size_t hdrEndPos);

@@ -7,7 +7,7 @@
 class FileUploadHandler
 {
 public:
-	FileUploadHandler();
+        FileUploadHandler() : m_fullPath(), m_fp(0) {}
 
 	// Open a file in uploadDir using safeFilename (already sanitized).
 	// Returns true on success.
