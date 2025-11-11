@@ -223,8 +223,34 @@ MultipartStreamParser::HRes MultipartStreamParser::parsePartHeaders(std::string:
 
 bool MultipartStreamParser::findNextBoundary(std::string::size_type &k, bool &isClosing)
 {
-	std::string::size_type needleClose = "\r\n" + m_delim;
-
+	std::string::size_type posClose = m_buf.find("\r\n" + m_delimClose);
+	std::string::size_type posReg = m_buf.find("\r\n" + m_delim);
+	if (posClose == std::string::npos && posReg == std::string::npos)
+		return false;
+	if (posClose != std::string::npos && posReg != std::string::npos)
+	{
+		if (posClose <= posReg)
+		{
+			k = posClose;
+			isClosing = true;
+			return true;
+		}
+		else
+		{
+			k = posReg;
+			isClosing = false;
+			return true;
+		}
+	}
+	if (posClose !=std::string::npos)
+	{
+		k = posClose; 
+		isClosing =true;
+		return true;
+	}
+	k = posReg;
+	isClosing =false;
+	return true;
 }
 
 bool MultipartStreamParser::emitDataChunk(size_t upto)
