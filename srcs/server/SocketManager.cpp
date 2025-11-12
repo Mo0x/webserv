@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/11 18:28:23 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/12 16:16:34 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -32,7 +32,6 @@
 #define LOG(...) std::fprintf(stderr, __VA_ARGS__)
 #endif
 
-
 /*
 	1. getaddrinfo();
 	2. socket();
@@ -43,8 +42,46 @@
 	7. close() || shutdown() close();
 
 */
+
+/*   --- CLIENT STATE DEFINITION   ---*/
+
+bool ClientState::mpDone() const
+{
+	return mp.isDone();
+}
+
+ClientState::ClientState() :
+		phase(READING_HEADERS),
+		recvBuffer(),
+		req(),
+		isChunked(false),
+		contentLength(0),
+		maxBodyAllowed(0),
+		bodyBuffer(),
+		chunkDec(),
+		writeBuffer(),
+		forceCloseAfterWrite(false),
+		closing(false),
+		isMultipart(false),
+		multipartInit(false),
+		multipartBoundary(),
+		mpState(MP_START),
+		mp(),
+		mpCtx(),
+		debugMultipartBytes(0),
+		uploadDir(),
+		maxFilePerPart(0),
+		multipartError(false),
+		multipartStatusCode(0),
+		multipartStatusTitle(),
+		multipartStatusBody()
+{
+	return ;
+}
+
 /* helper for safeguard*/
 //debug func
+
 static const char* phaseToStr(ClientState::Phase p)
 {
 	switch (p)
