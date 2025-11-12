@@ -135,7 +135,109 @@ static void splitCsvLower(const std::string &s, std::vector<std::string> &out)
 	}
 	trim(cur);
 	toLowerInPlace(cur);
-	if (!cur.empty()) out.push_back(cur);
+        if (!cur.empty()) out.push_back(cur);
+}
+
+static bool isValidMultipartBoundaryToken(const std::string &boundary)
+{
+        if (boundary.empty() || boundary.size() > 70)
+                return false;
+        for (size_t i = 0; i < boundary.size(); ++i)
+        {
+                const char c = boundary[i];
+                const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+                const bool digit = (c >= '0' && c <= '9');
+                const bool extra = (c == '.' || c == '_' || c == '+' || c == '-');
+                if (!(alpha || digit || extra))
+                        return false;
+        }
+        return true;
+}
+
+bool SocketManager::detectMultipartBoundary(int fd, ClientState &st)
+{
+        st.isMultipart = false;
+        st.multipartBoundary.clear();
+        st.multipartInit = false;
+
+        std::map<std::string, std::string>::const_iterator it = st.req.headers.find("content-type");
+        if (it == st.req.headers.end())
+                return true;
+
+        const std::string raw = it->second;
+        if (raw.empty())
+                return true;
+
+        const std::string::size_type semi = raw.find(';');
+        std::string typePart = (semi == std::string::npos) ? raw : raw.substr(0, semi);
+        trim(typePart);
+        std::string typeLower = typePart;
+        toLowerInPlace(typeLower);
+        const std::string::size_type wantLen = std::string("multipart/form-data").size();
+        if (typeLower.size() < wantLen || typeLower.compare(0, wantLen, "multipart/form-data") != 0)
+                return true;
+
+        std::string boundaryValue;
+        bool boundaryFound = false;
+
+        std::string params = (semi == std::string::npos) ? std::string() : raw.substr(semi + 1);
+        std::string::size_type pos = 0;
+        while (pos < params.size())
+        {
+                std::string::size_type nextSemi = params.find(';', pos);
+                std::string param = params.substr(pos, (nextSemi == std::string::npos) ? std::string::npos : nextSemi - pos);
+                trim(param);
+                if (!param.empty())
+                {
+                        size_t eq = param.find('=');
+                        if (eq != std::string::npos)
+                        {
+                                std::string name = param.substr(0, eq);
+                                trim(name);
+                                toLowerInPlace(name);
+                                std::string value = param.substr(eq + 1);
+                                trim(value);
+                                if (!value.empty() && value[0] == '"')
+                                {
+                                        if (value.size() >= 2 && value[value.size() - 1] == '"')
+                                                value = value.substr(1, value.size() - 2);
+                                        else
+                                                value.clear();
+                                }
+                                if (name == "boundary")
+                                {
+                                        boundaryFound = true;
+                                        boundaryValue = value;
+                                        break;
+                                }
+                        }
+                }
+                if (nextSemi == std::string::npos)
+                        break;
+                pos = nextSemi + 1;
+        }
+
+        if (!boundaryFound || boundaryValue.empty())
+        {
+                Response err = makeHtmlError(400, "Bad Request",
+                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>");
+                finalizeAndQueue(fd, err);
+                setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryParseHeaders");
+                return false;
+        }
+        if (!isValidMultipartBoundaryToken(boundaryValue))
+        {
+                Response err = makeHtmlError(400, "Bad Request",
+                        "<h1>400 Bad Request</h1><p>Invalid multipart boundary.</p>");
+                finalizeAndQueue(fd, err);
+                setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryParseHeaders");
+                return false;
+        }
+
+        st.isMultipart = true;
+        st.multipartBoundary = boundaryValue;
+        std::cerr << "[fd " << fd << "] multipart boundary=" << boundaryValue << std::endl;
+        return true;
 }
 
 /**
@@ -317,6 +419,12 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 			allowed = server.client_max_body_size;
 		st.maxBodyAllowed = allowed;
 	}
+	if (route && !route->upload_path.empty())
+		st.uploadDir = route->upload_path;
+	else
+		st.uploadDir = server.root;
+	st.maxFilePerPart = st.maxBodyAllowed;
+	st.multipartError = false;
 
 	// 2.5) early 501 check (server doesn't implement this verb at all)
 	{
@@ -529,6 +637,13 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 	// Non-chunked framing
 	if (st.contentLength > 0)
 	{
+		if (st.isMultipart)
+		{
+			// Leave body bytes in recvBuffer so tryReadBody can stream them into the multipart parser.
+			setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+			return;
+		}
+
 		// How many bytes of the body are already in the recv buffer?
 		size_t have = st.recvBuffer.size();
 		size_t need = st.contentLength - st.bodyBuffer.size();
@@ -571,6 +686,50 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
           << " body=" << st.bodyBuffer.size() << std::endl;
 }
 
+bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
+{
+        // Only enforce multipart handling for POST uploads; other methods proceed unchanged.
+        if (st.req.method != "POST")
+                return true;
+
+        // If this request is not multipart, no additional setup is required.
+        if (!st.isMultipart)
+                return true;
+
+        if (st.multipartBoundary.empty())
+        {
+                Response err = makeHtmlError(400, "Bad Request",
+                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>");
+                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+                return false;
+        }
+
+        const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+        const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
+        if (!route || route->upload_path.empty())
+        {
+                Response err = makeHtmlError(403, "Forbidden",
+                        "<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>");
+                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+                return false;
+        }
+
+        st.uploadDir = route->upload_path;
+
+        // Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
+        resetMultipartState(st);
+        st.multipartInit = false;
+        st.mpState = ClientState::MP_START;
+
+        st.mp.reset(st.multipartBoundary,
+                    &SocketManager::onPartBeginThunk,
+                    &SocketManager::onPartDataThunk,
+                    &SocketManager::onPartEndThunk,
+                    &st);
+        st.multipartInit = true;
+        return true;
+}
+
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 {
 		// 1) do we have full headers?
@@ -589,22 +748,28 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 	if (!parseRawHeadersIntoRequest(fd, st, hdrEndPos))
 		return false;
 
-	// (optional) header dump for debugging
-	std::cerr << "[fd " << fd << "] headers:";
-	for (std::map<std::string,std::string>::const_iterator it = st.req.headers.begin();
-		it != st.req.headers.end(); ++it)
-		std::cerr << " [" << it->first << ": " << it->second << "]";
-	std::cerr << std::endl;
+        // (optional) header dump for debugging
+        std::cerr << "[fd " << fd << "] headers:";
+        for (std::map<std::string,std::string>::const_iterator it = st.req.headers.begin();
+                it != st.req.headers.end(); ++it)
+                std::cerr << " [" << it->first << ": " << it->second << "]";
+        std::cerr << std::endl;
 
-	// 4) policy (method allowed, maxBodyAllowed, redirects...)
-	if (!applyRoutePolicyAfterHeaders(fd, st))
-		return false;
+        if (!detectMultipartBoundary(fd, st))
+                return false;
+
+        // 4) policy (method allowed, maxBodyAllowed, redirects...)
+        if (!applyRoutePolicyAfterHeaders(fd, st))
+                return false;
 
 	// 5) framing (sets st.isChunked / st.contentLength, may queue 4xx/5xx)
 	if (!setupBodyFramingAndLimits(fd, st))
 		return false;
 
-	// NOW it’s meaningful to log framing:
+	// 6) MultiPart detection and init
+
+	if (!doTheMultiPartThing(fd, st))
+		return false;
 	std::cerr << "[fd " << fd << "] framing: isChunked="
 			<< (st.isChunked?1:0) << " contentLength=" << st.contentLength << std::endl;
 

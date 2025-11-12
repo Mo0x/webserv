@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/07 15:54:49 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/10 11:31:26 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,12 +18,25 @@
 #include "Config.hpp"
 #include "request_parser.hpp"
 #include "Chunked.hpp"
+#include "FileUploadHandler.hpp"
+#include "MultipartStreamParser.hpp"
 #include <vector>
 #include <poll.h>
 #include <map>
 #include <string>
 #include <set>
 
+struct MultipartCtx
+{
+	FileUploadHandler          file;
+	std::vector<std::string>   savedNames;
+	std::map<std::string,std::string> fields;
+	std::string                fieldName, safeFilename, safeFilenameRaw, fieldBuffer, pendingWrite, currentFilePath;
+	size_t                     partBytes, partCount, totalDecoded;
+	int                        fileFd;
+	bool                       writingFile;
+	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), fileFd(-1), writingFile(false) {}
+};
 struct ClientState
 {
 	enum Phase
@@ -58,6 +71,58 @@ struct ClientState
 	std::string		writeBuffer;
 	bool			forceCloseAfterWrite;
 	bool			closing;
+	//Multi-Part
+	enum MpState
+	{
+		MP_START,
+		MP_PARSING,
+		MP_DONE,
+		MP_ERROR
+	};
+
+	bool isMultipart;
+	bool multipartInit;
+	std::string multipartBoundary;
+	MpState	mpState;
+	MultipartStreamParser mp;
+	MultipartCtx mpCtx;
+	size_t debugMultipartBytes;
+	std::string uploadDir;
+	size_t maxFilePerPart;
+	bool multipartError;
+	int multipartStatusCode;
+	std::string multipartStatusTitle;
+	std::string multipartStatusBody;
+
+	bool mpDone() const { return mp.isDone(); }
+
+	ClientState()
+		: phase(READING_HEADERS),
+		  recvBuffer(),
+		  req(),
+		  isChunked(false),
+		  contentLength(0),
+		  maxBodyAllowed(0),
+		  bodyBuffer(),
+		  chunkDec(),
+		  writeBuffer(),
+		  forceCloseAfterWrite(false),
+		  closing(false),
+		  isMultipart(false),
+		  multipartInit(false),
+		  multipartBoundary(),
+		  mpState(MP_START),
+		  mp(),
+		  mpCtx(),
+		  debugMultipartBytes(0),
+		  uploadDir(),
+		  maxFilePerPart(0),
+		  multipartError(false),
+		  multipartStatusCode(0),
+		  multipartStatusTitle(),
+		  multipartStatusBody()
+	{
+	}
 };
 
 class SocketManager
@@ -136,10 +201,11 @@ class SocketManager
 	bool clientHasPendingWrite(const ClientState &st) const;
 
 	bool tryParseHeaders(int fd, ClientState &st);
-	bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
-	Response makeHtmlError(int code, const std::string& reason, const std::string& html);
-	bool parseRawHeadersIntoRequest(int fd, ClientState &st, size_t hdrEndPos);
-	bool applyRoutePolicyAfterHeaders(int fd, ClientState &st);
+        bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
+        Response makeHtmlError(int code, const std::string& reason, const std::string& html);
+        bool parseRawHeadersIntoRequest(int fd, ClientState &st, size_t hdrEndPos);
+        bool detectMultipartBoundary(int fd, ClientState &st);
+        bool applyRoutePolicyAfterHeaders(int fd, ClientState &st);
 	bool badRequestAndQueue(int fd, ClientState &st);
 	bool setupBodyFramingAndLimits(int fd, ClientState &st);
 	void finalizeHeaderPhaseTransition (int fd, ClientState &st, size_t hdrEndPos);
@@ -157,7 +223,25 @@ class SocketManager
                             ClientState &st,
                             ClientState::Phase newp,
                             const char* where);
-	
+	void resetMultipartState(ClientState &st);
+	bool handleMultipartFailure(int fd, ClientState &st);
+	void cleanupMultipartFiles(ClientState &st, bool unlinkSaved);
+	static void setMultipartError(ClientState &st, int status, const std::string &title, const std::string &html);
+	void teardownMultipart(ClientState &st, bool unlinkSaved);
+	void queueMultipartSummary(int fd, ClientState &st);
+	//wiring multipart
+	static void onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers);
+	static void onPartDataThunk(void* user, const char* buf, size_t n);
+	static void onPartEndThunk(void* user);
+
+	//Multipart helpers
+	bool  doTheMultiPartThing(int fd, ClientState &st);   // you already added
+	bool  feedToMultipart(int fd, ClientState &st, const char* p, size_t n);
+
+	std::string extractBoundary(const std::string& ct) const;
+	bool  routeAllowsUpload(const ClientState& st) const;
+	std::string generateUploadName(size_t index) const;
+	void  queue201UploadList(int fd, const std::vector<std::string>& names);	
 
 };
 

@@ -1,4 +1,5 @@
 *.o
 webserv
 a.out
-/www/uploads/
+/www/uploads/*
+!/www/uploads/.gitkeep

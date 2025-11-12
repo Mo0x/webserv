@@ -2,17 +2,31 @@
 #define FILEUPLOADHANDLER_HPP
 
 #include <string>
-#include "MultipartParser.hpp"
+#include <cstdio>   // FILE*
 
 class FileUploadHandler
 {
 public:
-    // Saves the uploaded file part to the specified directory.
-    // Optionally enforces a maximum file size (0 means no limit).
-    // Returns the full path where the file was saved.
-    static std::string saveUploadedFile(const MultipartPart &part,
-                                          const std::string &uploadPath,
-                                          size_t maxFileSize = 0);
+        FileUploadHandler() : m_fullPath(), m_fp(0) {}
+
+	// Open a file in uploadDir using safeFilename (already sanitized).
+	// Returns true on success.
+	bool open(const std::string& uploadDir, const std::string& safeFilename);
+
+	// Write up to n bytes. Returns bytes actually written (may be short).
+	size_t write(const char* buf, size_t n);
+
+	// Close if open.
+	void close();
+
+	// Full path of the opened file (empty if not open).
+	const std::string& path() const { return m_fullPath; }
+
+	bool isOpen() const { return m_fp != 0; }
+
+private:
+	std::string m_fullPath;
+	FILE*       m_fp;
 };
 
 #endif
