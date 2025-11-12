@@ -30,6 +30,7 @@ struct MultipartCtx
 {
 	FileUploadHandler          file;
 	std::vector<std::string>   savedNames;
+	std::map<std::string,std::string> fields;
 	std::string                fieldName, safeFilename, safeFilenameRaw, fieldBuffer, pendingWrite, currentFilePath;
 	size_t                     partBytes, partCount, totalDecoded;
 	int                        fileFd;
@@ -218,6 +219,8 @@ class SocketManager
                             const char* where);
 	void resetMultipartState(ClientState &st);
 	bool handleMultipartFailure(int fd, ClientState &st);
+	void cleanupMultipartFiles(ClientState &st, bool unlinkSaved);
+	void queueMultipartSummary(int fd, ClientState &st);
 	//wiring multipart
 	static void onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers);
 	static void onPartDataThunk(void* user, const char* buf, size_t n);

@@ -88,7 +88,9 @@ void SocketManager::resetMultipartState(ClientState &st)
 		::unlink(st.mpCtx.currentFilePath.c_str());
 		st.mpCtx.currentFilePath.clear();
 	}
+	st.mpCtx.currentFilePath.clear();
 	st.mpCtx.savedNames.clear();
+	st.mpCtx.fields.clear();
 	st.mpCtx.fieldName.clear();
 	st.mpCtx.safeFilename.clear();
 	st.mpCtx.safeFilenameRaw.clear();
@@ -107,11 +109,71 @@ bool SocketManager::handleMultipartFailure(int fd, ClientState &st)
 {
 	if (!st.multipartError)
 		return false;
+	cleanupMultipartFiles(st, true);
 	Response err = makeHtmlError(413, "Payload Too Large",
 		"<h1>413 Payload Too Large</h1><p>Multipart upload aborted.</p>");
 	finalizeAndQueue(fd, st.req, err, false, true);
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 	return true;
+}
+
+void SocketManager::cleanupMultipartFiles(ClientState &st, bool unlinkSaved)
+{
+	if (st.mpCtx.fileFd >= 0)
+	{
+		::close(st.mpCtx.fileFd);
+		st.mpCtx.fileFd = -1;
+	}
+	if (!st.mpCtx.currentFilePath.empty())
+	{
+		if (unlinkSaved)
+			::unlink(st.mpCtx.currentFilePath.c_str());
+		st.mpCtx.currentFilePath.clear();
+	}
+	if (unlinkSaved)
+	{
+		for (std::vector<std::string>::iterator it = st.mpCtx.savedNames.begin();
+		     it != st.mpCtx.savedNames.end(); ++it)
+			::unlink(it->c_str());
+		st.mpCtx.savedNames.clear();
+	}
+}
+
+void SocketManager::queueMultipartSummary(int fd, ClientState &st)
+{
+	std::ostringstream body;
+	body << "Uploaded files:\n";
+	if (st.mpCtx.savedNames.empty())
+		body << "  (none)\n";
+	else
+	{
+		for (size_t i = 0; i < st.mpCtx.savedNames.size(); ++i)
+		{
+			const std::string &p = st.mpCtx.savedNames[i];
+			size_t slash = p.find_last_of('/');
+			const std::string display = (slash == std::string::npos) ? p : p.substr(slash + 1);
+			body << "  - " << display << "\n";
+		}
+	}
+	body << "\nFields:\n";
+	if (st.mpCtx.fields.empty())
+		body << "  (none)\n";
+	else
+	{
+		for (std::map<std::string,std::string>::const_iterator it = st.mpCtx.fields.begin();
+		     it != st.mpCtx.fields.end(); ++it)
+		{
+			body << "  - " << it->first << ": " << it->second << "\n";
+		}
+	}
+
+	Response res;
+	res.status_code = 201;
+	res.status_message = "Created";
+	res.headers["Content-Type"] = "text/plain; charset=utf-8";
+	res.body = body.str();
+	res.headers["Content-Length"] = to_string(res.body.size());
+	finalizeAndQueue(fd, st.req, res, false, true);
 }
 
 SocketManager::SocketManager()
@@ -795,6 +857,16 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	if (st.req.method == "POST")
 	{
 		const RouteConfig *route = findMatchingLocation(server, st.req.path);
+		if (st.isMultipart)
+		{
+			if (st.multipartError)
+			{
+				handleMultipartFailure(fd, st);
+				return;
+			}
+			queueMultipartSummary(fd, st);
+			return;
+		}
 		handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
 		return;
 	}
@@ -1070,6 +1142,8 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 	ClientState &st = m_clients[fd];
 	const bool headers_complete = true;
 	const bool client_close = clientRequestedClose(req);
+	if (st.isMultipart && res.status_code >= 400)
+		cleanupMultipartFiles(st, true);
 
         const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
         const bool force_close = close_it || st.closing;
@@ -1085,6 +1159,8 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 void SocketManager::finalizeAndQueue(int fd, Response &res)
 {
 	ClientState &st = m_clients[fd];
+	if (st.isMultipart && res.status_code >= 400)
+		cleanupMultipartFiles(st, true);
 	// Without a parsed Request, we can't honor per-request keep-alive safely.
 	// Default to closing the connection after this response.
 	const bool headers_complete       = true;
@@ -1408,6 +1484,20 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			}
 		}
 	}
+	else if (!cs->multipartError)
+	{
+		const size_t CAP = 64 * 1024;
+		size_t cur = cs->mpCtx.fieldBuffer.size();
+		size_t room = (cur < CAP) ? (CAP - cur) : 0;
+		size_t toCopy = room < n ? room : n;
+		if (toCopy > 0)
+			cs->mpCtx.fieldBuffer.append(buf, toCopy);
+		if (toCopy < n)
+		{
+			LOG("[multipart] field too large (>%lu bytes)\n", static_cast<unsigned long>(CAP));
+			cs->multipartError = true;
+		}
+	}
 
 	LOG("[multipart] part data chunk=%lu total=%lu\n",
 	    static_cast<unsigned long>(n),
@@ -1436,6 +1526,13 @@ void SocketManager::onPartEndThunk(void* user)
 		}
 		cs->mpCtx.currentFilePath.clear();
 		cs->mpCtx.writingFile = false;
+	}
+	else if (cs)
+	{
+		if (!cs->multipartError && !cs->mpCtx.fieldName.empty())
+			cs->mpCtx.fields[cs->mpCtx.fieldName] = cs->mpCtx.fieldBuffer;
+		cs->mpCtx.fieldBuffer.clear();
+		cs->mpCtx.fieldName.clear();
 	}
 
 	LOG("[multipart] part end (count=%lu totalBytes=%lu)\n",

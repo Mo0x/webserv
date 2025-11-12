@@ -697,6 +697,16 @@ bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
         if (!st.isMultipart)
                 return true;
 
+        if (st.uploadDir.empty())
+        {
+                const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+                const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
+                if (route && !route->upload_path.empty())
+                        st.uploadDir = route->upload_path;
+                else
+                        st.uploadDir = server.root;
+        }
+
         // Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
         resetMultipartState(st);
         st.mpState = ClientState::MP_START;
