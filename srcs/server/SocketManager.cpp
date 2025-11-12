@@ -103,6 +103,9 @@ void SocketManager::resetMultipartState(ClientState &st)
 	st.mpCtx.writingFile = false;
 	st.debugMultipartBytes = 0;
 	st.multipartError = false;
+	st.multipartStatusCode = 0;
+	st.multipartStatusTitle.clear();
+	st.multipartStatusBody.clear();
 }
 
 bool SocketManager::handleMultipartFailure(int fd, ClientState &st)
@@ -110,10 +113,72 @@ bool SocketManager::handleMultipartFailure(int fd, ClientState &st)
 	if (!st.multipartError)
 		return false;
 	cleanupMultipartFiles(st, true);
-	Response err = makeHtmlError(413, "Payload Too Large",
-		"<h1>413 Payload Too Large</h1><p>Multipart upload aborted.</p>");
+	const int status = (st.multipartStatusCode != 0) ? st.multipartStatusCode : 413;
+	std::string title;
+	std::string body;
+	if (!st.multipartStatusTitle.empty())
+		title = st.multipartStatusTitle;
+	else if (status == 500)
+		title = "Internal Server Error";
+	else if (status == 400)
+		title = "Bad Request";
+	else
+		title = "Payload Too Large";
+
+	if (!st.multipartStatusBody.empty())
+		body = st.multipartStatusBody;
+	else if (status == 500)
+		body = "<h1>500 Internal Server Error</h1><p>Upload failed.</p>";
+	else if (status == 400)
+		body = "<h1>400 Bad Request</h1><p>Malformed multipart upload.</p>";
+	else
+		body = "<h1>413 Payload Too Large</h1><p>Multipart upload aborted.</p>";
+
+	Response err = makeHtmlError(status, title, body);
 	finalizeAndQueue(fd, st.req, err, false, true);
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+	return true;
+}
+
+void SocketManager::setMultipartError(ClientState &st, int status, const std::string &title, const std::string &html)
+{
+	if (st.multipartError)
+		return;
+	st.multipartError = true;
+	st.multipartStatusCode = status;
+	st.multipartStatusTitle = title;
+	st.multipartStatusBody = html;
+}
+
+bool SocketManager::feedToMultipart(int fd, ClientState &st, const char* p, size_t n)
+{
+	if (!st.isMultipart || n == 0)
+		return true;
+
+	const size_t nextTotal = st.mpCtx.totalDecoded + n;
+	if (st.maxBodyAllowed > 0 && nextTotal > st.maxBodyAllowed)
+	{
+		Response err = makeHtmlError(413, "Payload Too Large",
+			"<h1>413 Payload Too Large</h1>");
+		finalizeAndQueue(fd, st.req, err, false, true);
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "feedToMultipart");
+		return false;
+	}
+
+	MultipartStreamParser::Result mpRes = st.mp.feed(p, n);
+	st.mpCtx.totalDecoded = nextTotal;
+	if (mpRes == MultipartStreamParser::ERR)
+	{
+		Response err = makeHtmlError(400, "Malformed multipart body",
+			"<h1>400 Malformed multipart body</h1>");
+		finalizeAndQueue(fd, st.req, err, false, true);
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "feedToMultipart");
+		return false;
+	}
+
+	if (handleMultipartFailure(fd, st))
+		return false;
+
 	return true;
 }
 
@@ -137,6 +202,16 @@ void SocketManager::cleanupMultipartFiles(ClientState &st, bool unlinkSaved)
 			::unlink(it->c_str());
 		st.mpCtx.savedNames.clear();
 	}
+}
+
+void SocketManager::teardownMultipart(ClientState &st, bool unlinkSaved)
+{
+	cleanupMultipartFiles(st, unlinkSaved);
+	resetMultipartState(st);
+	st.isMultipart = false;
+	st.multipartInit = false;
+	st.multipartBoundary.clear();
+	st.mpState = ClientState::MP_START;
 }
 
 void SocketManager::queueMultipartSummary(int fd, ClientState &st)
@@ -696,7 +771,14 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
                                   << " recv=" << st.recvBuffer.size()
                                   << " body=" << st.bodyBuffer.size() << std::endl;
 
-			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+			if (st.isMultipart && drained > 0)
+			{
+				const char* chunkPtr = st.bodyBuffer.data() + before;
+				if (!feedToMultipart(fd, st, chunkPtr, drained))
+					return false;
+				st.bodyBuffer.resize(before);
+			}
+			else if (!st.isMultipart && st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 			{
 				st.closing = true;
 				st.recvBuffer.clear();
@@ -708,24 +790,6 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				finalizeAndQueue(fd, st.req, err, false, true);
 				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 				return false;
-			}
-
-			if (st.isMultipart && drained > 0)
-			{
-				MultipartStreamParser::Result mpRes =
-					st.mp.feed(st.bodyBuffer.data(), drained);
-				st.bodyBuffer.clear();
-				if (mpRes == MultipartStreamParser::ERR)
-				{
-					Response err = makeHtmlError(400, "Malformed multipart body",
-						"<h1>400 Malformed multipart body</h1>");
-					finalizeAndQueue(fd, st.req, err, false, true);
-					setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-					return false;
-				}
-
-				if (handleMultipartFailure(fd, st))
-					return false;
 			}
 
 			if (st.chunkDec.hasError())
@@ -778,47 +842,34 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 		size_t need = want - haveNow;
 		size_t take = st.recvBuffer.size() < need ? st.recvBuffer.size() : need;
 
-			if (take > 0)
+		if (take > 0)
+		{
+			if (st.isMultipart)
+			{
+				const char* chunkPtr = st.recvBuffer.data();
+				if (!feedToMultipart(fd, st, chunkPtr, take))
+					return false;
+				st.recvBuffer.erase(0, take);
+			}
+			else
 			{
 				st.bodyBuffer.append(st.recvBuffer.data(), take);
 				st.recvBuffer.erase(0, take);
 
-			// Enforce cap in CL mode (early 413 should have run already, this is a safety net)
-			const size_t effectiveSize = st.isMultipart
-				? (st.mpCtx.totalDecoded + st.bodyBuffer.size())
-				: st.bodyBuffer.size();
-			if (st.maxBodyAllowed > 0 && effectiveSize > st.maxBodyAllowed)
-			{
-				Response err = makeHtmlError(413, "Payload Too Large",
-					"<h1>413 Payload Too Large</h1>");
-				finalizeAndQueue(fd, err);
-				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-				return false;
-			}
-
-				if (st.isMultipart && !st.bodyBuffer.empty())
+				if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 				{
-					MultipartStreamParser::Result mpRes =
-						st.mp.feed(st.bodyBuffer.data(), st.bodyBuffer.size());
-					if (mpRes == MultipartStreamParser::ERR)
-				{
-					Response err = makeHtmlError(400, "Malformed multipart body",
-						"<h1>400 Malformed multipart body</h1>");
-					finalizeAndQueue(fd, st.req, err, false, true);
+					Response err = makeHtmlError(413, "Payload Too Large",
+						"<h1>413 Payload Too Large</h1>");
+					finalizeAndQueue(fd, err);
 					setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 					return false;
 				}
-					st.mpCtx.totalDecoded += st.bodyBuffer.size();
-					st.bodyBuffer.clear();
-
-					if (handleMultipartFailure(fd, st))
-						return false;
-				}
 			}
 		}
+	}
 
-		if (handleMultipartFailure(fd, st))
-			return false;
+	if (handleMultipartFailure(fd, st))
+		return false;
 
 		// Check completion
 	const size_t haveTotal = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
@@ -864,6 +915,7 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 				handleMultipartFailure(fd, st);
 				return;
 			}
+			st.req.form_fields = st.mpCtx.fields;
 			queueMultipartSummary(fd, st);
 			return;
 		}
@@ -934,23 +986,30 @@ void SocketManager::handleClientRead(int fd)
 		else
 		{
 			// Need more bytes → now attempt a read
-			if (!readIntoBuffer(fd, st))
-			{
-				// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
-				// otherwise treat as incomplete body.
-				if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
+				if (!readIntoBuffer(fd, st))
 				{
-						setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
+					// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
+					// otherwise treat as incomplete body.
+					bool completed = false;
+					if (!st.isChunked)
+					{
+						const size_t have = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
+						if (st.contentLength == have && (!st.isMultipart || st.mpDone()))
+						{
+							setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
+							completed = true;
+						}
+					}
+
+					if (!completed)
+					{
+						Response err = makeHtmlError(400, "Bad Request",
+							"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>");
+						finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
+						return;
+					}
 				}
-				else
-				{
-					Response err = makeHtmlError(400, "Bad Request",
-						"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>");
-					finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-					setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
-					return;
-				}
-			}
 			else
 			{
 				// Got more bytes; try to progress again
@@ -1142,8 +1201,11 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 	ClientState &st = m_clients[fd];
 	const bool headers_complete = true;
 	const bool client_close = clientRequestedClose(req);
-	if (st.isMultipart && res.status_code >= 400)
-		cleanupMultipartFiles(st, true);
+	if (st.isMultipart)
+	{
+		const bool unlinkSaved = (res.status_code >= 400);
+		teardownMultipart(st, unlinkSaved);
+	}
 
         const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
         const bool force_close = close_it || st.closing;
@@ -1159,8 +1221,11 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 void SocketManager::finalizeAndQueue(int fd, Response &res)
 {
 	ClientState &st = m_clients[fd];
-	if (st.isMultipart && res.status_code >= 400)
-		cleanupMultipartFiles(st, true);
+	if (st.isMultipart)
+	{
+		const bool unlinkSaved = (res.status_code >= 400);
+		teardownMultipart(st, unlinkSaved);
+	}
 	// Without a parsed Request, we can't honor per-request keep-alive safely.
 	// Default to closing the connection after this response.
 	const bool headers_complete       = true;
@@ -1417,7 +1482,8 @@ void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std:
 		if (cs->uploadDir.empty() || !dirExists(cs->uploadDir))
 		{
 			LOG("[multipart] upload dir unavailable: %s\n", cs->uploadDir.c_str());
-			cs->multipartError = true;
+			SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
+				"<h1>500 Internal Server Error</h1><p>Upload directory unavailable.</p>");
 			cs->mpCtx.writingFile = false;
 		}
 		else
@@ -1428,7 +1494,8 @@ void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std:
 			if (fd < 0)
 			{
 				LOG("[multipart] failed to open %s: %s\n", fullPath.c_str(), std::strerror(errno));
-				cs->multipartError = true;
+				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
+					"<h1>500 Internal Server Error</h1><p>Unable to create upload file.</p>");
 				cs->mpCtx.writingFile = false;
 			}
 			else
@@ -1467,7 +1534,8 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 				if (errno == EINTR)
 					continue;
 				LOG("[multipart] write error: %s\n", std::strerror(errno));
-				cs->multipartError = true;
+				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
+					"<h1>500 Internal Server Error</h1><p>Failed while writing upload.</p>");
 				break;
 			}
 			if (w == 0)
@@ -1479,7 +1547,8 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 				LOG("[multipart] part exceeded limit (%lu > %lu)\n",
 				    static_cast<unsigned long>(cs->mpCtx.partBytes),
 				    static_cast<unsigned long>(cs->maxFilePerPart));
-				cs->multipartError = true;
+				SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
+					"<h1>413 Payload Too Large</h1><p>Upload exceeded allowed size.</p>");
 				break;
 			}
 		}
@@ -1495,7 +1564,8 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 		if (toCopy < n)
 		{
 			LOG("[multipart] field too large (>%lu bytes)\n", static_cast<unsigned long>(CAP));
-			cs->multipartError = true;
+			SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
+				"<h1>413 Payload Too Large</h1><p>Form field exceeded allowed size.</p>");
 		}
 	}
 

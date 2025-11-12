@@ -688,7 +688,6 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 
 bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
 {
-        (void)fd;
         // Only enforce multipart handling for POST uploads; other methods proceed unchanged.
         if (st.req.method != "POST")
                 return true;
@@ -697,19 +696,37 @@ bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
         if (!st.isMultipart)
                 return true;
 
-        if (st.uploadDir.empty())
+        if (st.multipartBoundary.empty())
         {
-                const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
-                const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
-                if (route && !route->upload_path.empty())
-                        st.uploadDir = route->upload_path;
-                else
-                        st.uploadDir = server.root;
+                Response err = makeHtmlError(400, "Bad Request",
+                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>");
+                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+                return false;
         }
+
+        const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+        const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
+        if (!route || route->upload_path.empty())
+        {
+                Response err = makeHtmlError(403, "Forbidden",
+                        "<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>");
+                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+                return false;
+        }
+
+        st.uploadDir = route->upload_path;
 
         // Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
         resetMultipartState(st);
+        st.multipartInit = false;
         st.mpState = ClientState::MP_START;
+
+        st.mp.reset(st.multipartBoundary,
+                    &SocketManager::onPartBeginThunk,
+                    &SocketManager::onPartDataThunk,
+                    &SocketManager::onPartEndThunk,
+                    &st);
+        st.multipartInit = true;
         return true;
 }
 

@@ -10,6 +10,7 @@ struct Request {
     std::string http_version;
     std::map<std::string, std::string> headers;
     std::string body;
+    std::map<std::string, std::string> form_fields;
 };
 
 struct Response {

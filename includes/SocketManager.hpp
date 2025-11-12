@@ -90,6 +90,9 @@ struct ClientState
 	std::string uploadDir;
 	size_t maxFilePerPart;
 	bool multipartError;
+	int multipartStatusCode;
+	std::string multipartStatusTitle;
+	std::string multipartStatusBody;
 
 	bool mpDone() const { return mp.isDone(); }
 
@@ -114,7 +117,10 @@ struct ClientState
 		  debugMultipartBytes(0),
 		  uploadDir(),
 		  maxFilePerPart(0),
-		  multipartError(false)
+		  multipartError(false),
+		  multipartStatusCode(0),
+		  multipartStatusTitle(),
+		  multipartStatusBody()
 	{
 	}
 };
@@ -220,6 +226,8 @@ class SocketManager
 	void resetMultipartState(ClientState &st);
 	bool handleMultipartFailure(int fd, ClientState &st);
 	void cleanupMultipartFiles(ClientState &st, bool unlinkSaved);
+	static void setMultipartError(ClientState &st, int status, const std::string &title, const std::string &html);
+	void teardownMultipart(ClientState &st, bool unlinkSaved);
 	void queueMultipartSummary(int fd, ClientState &st);
 	//wiring multipart
 	static void onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers);
