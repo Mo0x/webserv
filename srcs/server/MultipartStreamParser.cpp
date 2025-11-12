@@ -427,3 +427,8 @@ int MultipartStreamParser::mp_state() const
 {
         return static_cast<int>(m_st);
 }
+
+bool MultipartStreamParser::isDone() const
+{
+        return m_st == S_DONE;
+}

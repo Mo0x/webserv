@@ -30,10 +30,11 @@ struct MultipartCtx
 {
 	FileUploadHandler          file;
 	std::vector<std::string>   savedNames;
-	std::string                fieldName, safeFilename, fieldBuffer, pendingWrite;
+	std::string                fieldName, safeFilename, safeFilenameRaw, fieldBuffer, pendingWrite, currentFilePath;
 	size_t                     partBytes, partCount, totalDecoded;
+	int                        fileFd;
 	bool                       writingFile;
-	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), writingFile(false) {}
+	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), fileFd(-1), writingFile(false) {}
 };
 struct ClientState
 {
@@ -84,6 +85,12 @@ struct ClientState
 	MpState	mpState;
 	MultipartStreamParser mp;
 	MultipartCtx mpCtx;
+	size_t debugMultipartBytes;
+	std::string uploadDir;
+	size_t maxFilePerPart;
+	bool multipartError;
+
+	bool mpDone() const { return mp.isDone(); }
 
 	ClientState()
 		: phase(READING_HEADERS),
@@ -102,7 +109,11 @@ struct ClientState
 		  multipartBoundary(),
 		  mpState(MP_START),
 		  mp(),
-		  mpCtx()
+		  mpCtx(),
+		  debugMultipartBytes(0),
+		  uploadDir(),
+		  maxFilePerPart(0),
+		  multipartError(false)
 	{
 	}
 };
@@ -205,6 +216,8 @@ class SocketManager
                             ClientState &st,
                             ClientState::Phase newp,
                             const char* where);
+	void resetMultipartState(ClientState &st);
+	bool handleMultipartFailure(int fd, ClientState &st);
 	//wiring multipart
 	static void onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers);
 	static void onPartDataThunk(void* user, const char* buf, size_t n);
@@ -216,7 +229,6 @@ class SocketManager
 
 	std::string extractBoundary(const std::string& ct) const;
 	bool  routeAllowsUpload(const ClientState& st) const;
-	std::string sanitizeFilename(const std::string& raw) const;
 	std::string generateUploadName(size_t index) const;
 	void  queue201UploadList(int fd, const std::vector<std::string>& names);	
 

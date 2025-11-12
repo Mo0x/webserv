@@ -419,6 +419,12 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 			allowed = server.client_max_body_size;
 		st.maxBodyAllowed = allowed;
 	}
+	if (route && !route->upload_path.empty())
+		st.uploadDir = route->upload_path;
+	else
+		st.uploadDir = server.root;
+	st.maxFilePerPart = st.maxBodyAllowed;
+	st.multipartError = false;
 
 	// 2.5) early 501 check (server doesn't implement this verb at all)
 	{
@@ -631,6 +637,13 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 	// Non-chunked framing
 	if (st.contentLength > 0)
 	{
+		if (st.isMultipart)
+		{
+			// Leave body bytes in recvBuffer so tryReadBody can stream them into the multipart parser.
+			setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+			return;
+		}
+
 		// How many bytes of the body are already in the recv buffer?
 		size_t have = st.recvBuffer.size();
 		size_t need = st.contentLength - st.bodyBuffer.size();
@@ -676,11 +689,18 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
 {
         (void)fd;
-        //1) we only act for request that have bodies
+        // Only enforce multipart handling for POST uploads; other methods proceed unchanged.
         if (st.req.method != "POST")
-                return false;
+                return true;
 
-        return false;
+        // If this request is not multipart, no additional setup is required.
+        if (!st.isMultipart)
+                return true;
+
+        // Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
+        resetMultipartState(st);
+        st.mpState = ClientState::MP_START;
+        return true;
 }
 
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)

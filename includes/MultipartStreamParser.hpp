@@ -29,6 +29,7 @@ class MultipartStreamParser
         Result feed(const char* data, size_t n);  // body bytes only (unchunked)
 
         int mp_state() const;
+        bool isDone() const;
 
         private:
 	// Minimal Finite State Machine + rolling buffer
