@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/09 18:21:38 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/11 18:28:23 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -27,6 +27,11 @@
 #include <cerrno>
 #include <cstring> //for std::strerror
 #include <cctype>
+
+#ifndef LOG
+#define LOG(...) std::fprintf(stderr, __VA_ARGS__)
+#endif
+
 
 /*
 	1. getaddrinfo();
@@ -69,6 +74,181 @@ SocketManager::SocketManager(const Config &config) :
 	m_config(config)
 {
 	return ;
+}
+
+void SocketManager::resetMultipartState(ClientState &st)
+{
+	if (st.mpCtx.fileFd >= 0)
+	{
+		::close(st.mpCtx.fileFd);
+		st.mpCtx.fileFd = -1;
+	}
+	if (!st.mpCtx.currentFilePath.empty())
+	{
+		::unlink(st.mpCtx.currentFilePath.c_str());
+		st.mpCtx.currentFilePath.clear();
+	}
+	st.mpCtx.currentFilePath.clear();
+	st.mpCtx.savedNames.clear();
+	st.mpCtx.fields.clear();
+	st.mpCtx.fieldName.clear();
+	st.mpCtx.safeFilename.clear();
+	st.mpCtx.safeFilenameRaw.clear();
+	st.mpCtx.fieldBuffer.clear();
+	st.mpCtx.pendingWrite.clear();
+	st.mpCtx.currentFilePath.clear();
+	st.mpCtx.partBytes = 0;
+	st.mpCtx.partCount = 0;
+	st.mpCtx.totalDecoded = 0;
+	st.mpCtx.writingFile = false;
+	st.debugMultipartBytes = 0;
+	st.multipartError = false;
+	st.multipartStatusCode = 0;
+	st.multipartStatusTitle.clear();
+	st.multipartStatusBody.clear();
+}
+
+bool SocketManager::handleMultipartFailure(int fd, ClientState &st)
+{
+	if (!st.multipartError)
+		return false;
+	cleanupMultipartFiles(st, true);
+	const int status = (st.multipartStatusCode != 0) ? st.multipartStatusCode : 413;
+	std::string title;
+	std::string body;
+	if (!st.multipartStatusTitle.empty())
+		title = st.multipartStatusTitle;
+	else if (status == 500)
+		title = "Internal Server Error";
+	else if (status == 400)
+		title = "Bad Request";
+	else
+		title = "Payload Too Large";
+
+	if (!st.multipartStatusBody.empty())
+		body = st.multipartStatusBody;
+	else if (status == 500)
+		body = "<h1>500 Internal Server Error</h1><p>Upload failed.</p>";
+	else if (status == 400)
+		body = "<h1>400 Bad Request</h1><p>Malformed multipart upload.</p>";
+	else
+		body = "<h1>413 Payload Too Large</h1><p>Multipart upload aborted.</p>";
+
+	Response err = makeHtmlError(status, title, body);
+	finalizeAndQueue(fd, st.req, err, false, true);
+	setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+	return true;
+}
+
+void SocketManager::setMultipartError(ClientState &st, int status, const std::string &title, const std::string &html)
+{
+	if (st.multipartError)
+		return;
+	st.multipartError = true;
+	st.multipartStatusCode = status;
+	st.multipartStatusTitle = title;
+	st.multipartStatusBody = html;
+}
+
+bool SocketManager::feedToMultipart(int fd, ClientState &st, const char* p, size_t n)
+{
+	if (!st.isMultipart || n == 0)
+		return true;
+
+	const size_t nextTotal = st.mpCtx.totalDecoded + n;
+	if (st.maxBodyAllowed > 0 && nextTotal > st.maxBodyAllowed)
+	{
+		Response err = makeHtmlError(413, "Payload Too Large",
+			"<h1>413 Payload Too Large</h1>");
+		finalizeAndQueue(fd, st.req, err, false, true);
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "feedToMultipart");
+		return false;
+	}
+
+	MultipartStreamParser::Result mpRes = st.mp.feed(p, n);
+	st.mpCtx.totalDecoded = nextTotal;
+	if (mpRes == MultipartStreamParser::ERR)
+	{
+		Response err = makeHtmlError(400, "Malformed multipart body",
+			"<h1>400 Malformed multipart body</h1>");
+		finalizeAndQueue(fd, st.req, err, false, true);
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "feedToMultipart");
+		return false;
+	}
+
+	if (handleMultipartFailure(fd, st))
+		return false;
+
+	return true;
+}
+
+void SocketManager::cleanupMultipartFiles(ClientState &st, bool unlinkSaved)
+{
+	if (st.mpCtx.fileFd >= 0)
+	{
+		::close(st.mpCtx.fileFd);
+		st.mpCtx.fileFd = -1;
+	}
+	if (!st.mpCtx.currentFilePath.empty())
+	{
+		if (unlinkSaved)
+			::unlink(st.mpCtx.currentFilePath.c_str());
+		st.mpCtx.currentFilePath.clear();
+	}
+	if (unlinkSaved)
+	{
+		for (std::vector<std::string>::iterator it = st.mpCtx.savedNames.begin();
+		     it != st.mpCtx.savedNames.end(); ++it)
+			::unlink(it->c_str());
+		st.mpCtx.savedNames.clear();
+	}
+}
+
+void SocketManager::teardownMultipart(ClientState &st, bool unlinkSaved)
+{
+	cleanupMultipartFiles(st, unlinkSaved);
+	resetMultipartState(st);
+	st.isMultipart = false;
+	st.multipartInit = false;
+	st.multipartBoundary.clear();
+	st.mpState = ClientState::MP_START;
+}
+
+void SocketManager::queueMultipartSummary(int fd, ClientState &st)
+{
+	std::ostringstream body;
+	body << "Uploaded files:\n";
+	if (st.mpCtx.savedNames.empty())
+		body << "  (none)\n";
+	else
+	{
+		for (size_t i = 0; i < st.mpCtx.savedNames.size(); ++i)
+		{
+			const std::string &p = st.mpCtx.savedNames[i];
+			size_t slash = p.find_last_of('/');
+			const std::string display = (slash == std::string::npos) ? p : p.substr(slash + 1);
+			body << "  - " << display << "\n";
+		}
+	}
+	body << "\nFields:\n";
+	if (st.mpCtx.fields.empty())
+		body << "  (none)\n";
+	else
+	{
+		for (std::map<std::string,std::string>::const_iterator it = st.mpCtx.fields.begin();
+		     it != st.mpCtx.fields.end(); ++it)
+		{
+			body << "  - " << it->first << ": " << it->second << "\n";
+		}
+	}
+
+	Response res;
+	res.status_code = 201;
+	res.status_message = "Created";
+	res.headers["Content-Type"] = "text/plain; charset=utf-8";
+	res.body = body.str();
+	res.headers["Content-Length"] = to_string(res.body.size());
+	finalizeAndQueue(fd, st.req, res, false, true);
 }
 
 SocketManager::SocketManager()
@@ -210,12 +390,18 @@ void SocketManager::handleNewConnection(int listen_fd)
 	st.isChunked      = false;
 	st.contentLength  = 0;
 	st.maxBodyAllowed = 0;
-	st.writeBuffer.clear();
-	st.forceCloseAfterWrite = false;
-	st.closing = false;
-	// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
+        st.writeBuffer.clear();
+        st.forceCloseAfterWrite = false;
+        st.closing = false;
+        st.isMultipart = false;
+        st.multipartInit = false;
+        st.multipartBoundary.clear();
+        st.mpState = ClientState::MP_START;
+        st.mp = MultipartStreamParser();
+        resetMultipartState(st);
+        // If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
 
-	m_clients[client_fd] = st;
+        m_clients[client_fd] = st;
 
 	// If you track per-fd pending-write flags/queues, clear them here to avoid
 	// the "skip read: pending write" early-return on fresh connections.
@@ -551,10 +737,13 @@ bool SocketManager::clientHasPendingWrite(const ClientState &st) const
 
 bool SocketManager::tryReadBody(int fd, ClientState &st)
 {
-        if (st.phase != ClientState::READING_BODY) {
-                std::cerr << "[fd " << fd << "] BUG: tryReadBody called in phase=" << phaseToStr(st.phase)
-                          << " — bug in call site\n";
-        }
+	if (st.phase != ClientState::READING_BODY) {
+		std::cerr << "[fd " << fd << "] BUG: tryReadBody called in phase=" << phaseToStr(st.phase)
+				  << " — bug in call site\n";
+	}
+
+	if (handleMultipartFailure(fd, st))
+		return false;
 
 	// --- CHUNKED TRANSFER ---------------------------------------------------
 	if (st.isChunked)
@@ -582,7 +771,14 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
                                   << " recv=" << st.recvBuffer.size()
                                   << " body=" << st.bodyBuffer.size() << std::endl;
 
-			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+			if (st.isMultipart && drained > 0)
+			{
+				const char* chunkPtr = st.bodyBuffer.data() + before;
+				if (!feedToMultipart(fd, st, chunkPtr, drained))
+					return false;
+				st.bodyBuffer.resize(before);
+			}
+			else if (!st.isMultipart && st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
 			{
 				st.closing = true;
 				st.recvBuffer.clear();
@@ -607,6 +803,14 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
                         if (st.chunkDec.done())
                         {
+                                if (st.isMultipart && !st.mpDone())
+                                {
+                                        Response err = makeHtmlError(400, "Bad Request",
+                                                "<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
+                                        finalizeAndQueue(fd, st.req, err, false, true);
+                                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+                                        return false;
+                                }
                                 setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
                                 return true;
                         }
@@ -624,7 +828,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	// --- CONTENT-LENGTH -----------------------------------------------------
 	// No chunked TE: read exactly st.contentLength bytes into bodyBuffer
 	const size_t want = st.contentLength;
-	const size_t haveNow = st.bodyBuffer.size();
+	const size_t haveNow = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
 
         if (want <= haveNow)
         {
@@ -640,29 +844,49 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
 		if (take > 0)
 		{
-			st.bodyBuffer.append(st.recvBuffer.data(), take);
-			st.recvBuffer.erase(0, take);
-
-			// Enforce cap in CL mode (early 413 should have run already, this is a safety net)
-			if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+			if (st.isMultipart)
 			{
-				Response err = makeHtmlError(413, "Payload Too Large",
-					"<h1>413 Payload Too Large</h1>");
-				finalizeAndQueue(fd, err);
-				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-				return false;
+				const char* chunkPtr = st.recvBuffer.data();
+				if (!feedToMultipart(fd, st, chunkPtr, take))
+					return false;
+				st.recvBuffer.erase(0, take);
+			}
+			else
+			{
+				st.bodyBuffer.append(st.recvBuffer.data(), take);
+				st.recvBuffer.erase(0, take);
+
+				if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+				{
+					Response err = makeHtmlError(413, "Payload Too Large",
+						"<h1>413 Payload Too Large</h1>");
+					finalizeAndQueue(fd, err);
+					setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+					return false;
+				}
 			}
 		}
 	}
 
-	// Check completion
-        if (st.bodyBuffer.size() >= want)
+	if (handleMultipartFailure(fd, st))
+		return false;
+
+		// Check completion
+	const size_t haveTotal = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
+        if (haveTotal >= want)
         {
+                if (st.isMultipart && !st.mpDone())
+                {
+                        Response err = makeHtmlError(400, "Bad Request",
+                                "<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
+                        finalizeAndQueue(fd, st.req, err, false, true);
+                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+                        return false;
+                }
                 // Body complete — any remaining st.recvBuffer is pipelined next request
                 setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
                 return true;
         }
-
 	// Need more bytes
 	return false;
 }
@@ -684,6 +908,17 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	if (st.req.method == "POST")
 	{
 		const RouteConfig *route = findMatchingLocation(server, st.req.path);
+		if (st.isMultipart)
+		{
+			if (st.multipartError)
+			{
+				handleMultipartFailure(fd, st);
+				return;
+			}
+			st.req.form_fields = st.mpCtx.fields;
+			queueMultipartSummary(fd, st);
+			return;
+		}
 		handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
 		return;
 	}
@@ -751,23 +986,30 @@ void SocketManager::handleClientRead(int fd)
 		else
 		{
 			// Need more bytes → now attempt a read
-			if (!readIntoBuffer(fd, st))
-			{
-				// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
-				// otherwise treat as incomplete body.
-                                if (!st.isChunked && st.contentLength == st.bodyBuffer.size())
-                                {
-                                        setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
-                                }
-				else
+				if (!readIntoBuffer(fd, st))
 				{
-					Response err = makeHtmlError(400, "Bad Request",
-						"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>");
-					finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-					setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
-					return;
+					// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
+					// otherwise treat as incomplete body.
+					bool completed = false;
+					if (!st.isChunked)
+					{
+						const size_t have = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
+						if (st.contentLength == have && (!st.isMultipart || st.mpDone()))
+						{
+							setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
+							completed = true;
+						}
+					}
+
+					if (!completed)
+					{
+						Response err = makeHtmlError(400, "Bad Request",
+							"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>");
+						finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
+						return;
+					}
 				}
-			}
 			else
 			{
 				// Got more bytes; try to progress again
@@ -799,8 +1041,18 @@ void SocketManager::handleClientRead(int fd)
 				//               set st.phase to READING_BODY or READY_TO_DISPATCH
 				// - if bad request: queue error response + set st.phase = SENDING_RESPONSE, return false
 				return; // need more data or we already have an error
-		}
 
+			if (st.phase == ClientState::READING_BODY && st.isMultipart && !st.multipartInit)
+			{
+				st.mp.reset(st.multipartBoundary,
+				            &SocketManager::onPartBeginThunk,
+				            &SocketManager::onPartDataThunk,
+				            &SocketManager::onPartEndThunk,
+				            &st);
+				st.multipartInit = true;
+				std::cout << "[fd" << fd << "] multipart parser reset";
+			}
+		}
 		// If we just transitioned to READING_BODY, try to consume immediately
 		if (st.phase == ClientState::READING_BODY)
 		{
@@ -949,6 +1201,11 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 	ClientState &st = m_clients[fd];
 	const bool headers_complete = true;
 	const bool client_close = clientRequestedClose(req);
+	if (st.isMultipart)
+	{
+		const bool unlinkSaved = (res.status_code >= 400);
+		teardownMultipart(st, unlinkSaved);
+	}
 
         const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
         const bool force_close = close_it || st.closing;
@@ -964,6 +1221,11 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 void SocketManager::finalizeAndQueue(int fd, Response &res)
 {
 	ClientState &st = m_clients[fd];
+	if (st.isMultipart)
+	{
+		const bool unlinkSaved = (res.status_code >= 400);
+		teardownMultipart(st, unlinkSaved);
+	}
 	// Without a parsed Request, we can't honor per-request keep-alive safely.
 	// Default to closing the connection after this response.
 	const bool headers_complete       = true;
@@ -1016,26 +1278,32 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 		st.writeBuffer.erase(0, static_cast<size_t>(n));
 	}
 
-        clearPollout(fd);
-        st.writeBuffer.clear();
+	clearPollout(fd);
+	st.writeBuffer.clear();
 
-        if (st.forceCloseAfterWrite || st.closing)
-        {
-                handleClientDisconnect(fd);
-                return false;
-        }
+	if (st.forceCloseAfterWrite || st.closing)
+	{
+			handleClientDisconnect(fd);
+			return false;
+	}
 
-        st.forceCloseAfterWrite = false;
-        st.closing = false;
-        resetRequestState(fd);
-        st.req = Request();
+	st.forceCloseAfterWrite = false;
+	st.closing = false;
+	resetRequestState(fd);
+	st.req = Request();
         st.bodyBuffer.clear();
         st.isChunked = false;
-	st.contentLength = 0;
-	st.maxBodyAllowed = 0;
-	st.chunkDec = ChunkedDecoder();
-	setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
-	return true;
+        st.contentLength = 0;
+        st.maxBodyAllowed = 0;
+        st.chunkDec = ChunkedDecoder();
+        st.isMultipart = false;
+        st.multipartInit = false;
+        st.multipartBoundary.clear();
+        st.mpState = ClientState::MP_START;
+        st.mp = MultipartStreamParser();
+        resetMultipartState(st);
+        setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+        return true;
 }
 
 bool SocketManager::shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const
@@ -1080,152 +1348,264 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	return true;
 }
 
-
-//previous run funciton now its cleaner and divided in multiple functions.
-
-/* void SocketManager::run()
+static std::string trimQuotes(const std::string &value)
 {
-	initPoll();
-	std::cout << "Starting poll() loop on " << m_pollfds.size() << " sockets." << std::endl;
+	if (value.size() >= 2 && value[0] == '"' && value[value.size() - 1] == '"')
+		return value.substr(1, value.size() - 2);
+	return value;
+}
 
-	while (true)
+static std::string sanitizeMultipartFilename(const std::string &raw)
+{
+	std::string base = raw;
+	size_t slash = base.find_last_of("/\\");
+	if (slash != std::string::npos)
+		base = base.substr(slash + 1);
+	std::string cleaned;
+	for (size_t i = 0; i < base.size(); ++i)
 	{
-		std::cout << "[DEBUG] Polling..." << std::endl;
-		int ret = poll(&m_pollfds[0], m_pollfds.size(), -1);
-		std::cout << "[DEBUG] poll() returned: " << ret << std::endl;
-
-		if (ret < 0)
-		{
-			perror("poll() failed");
+		unsigned char c = static_cast<unsigned char>(base[i]);
+		if (c < 32 || c == '/' || c == '\\')
+			continue;
+		cleaned.push_back(static_cast<char>(c));
+		if (cleaned.size() >= 100)
 			break;
-		}
+	}
+	if (cleaned.empty())
+		cleaned = "upload.bin";
+	return cleaned;
+}
 
-		for (size_t i = 0; i < m_pollfds.size(); ++i)
+static std::string joinUploadPath(const std::string &dir, const std::string &name)
+{
+	if (dir.empty())
+		return name;
+	if (dir[dir.size() - 1] == '/')
+		return dir + name;
+	return dir + "/" + name;
+}
+
+static std::string makeUniqueUploadPath(const std::string &dir, const std::string &base)
+{
+	if (!fileExists(joinUploadPath(dir, base)))
+		return joinUploadPath(dir, base);
+	std::string stem = base;
+	std::string ext;
+	size_t dot = base.find_last_of('.');
+	if (dot != std::string::npos)
+	{
+		stem = base.substr(0, dot);
+		ext = base.substr(dot);
+	}
+	for (size_t i = 1; i < 1000; ++i)
+	{
+		std::ostringstream oss;
+		oss << stem << "_" << i << ext;
+		std::string candidate = joinUploadPath(dir, oss.str());
+		if (!fileExists(candidate))
+			return candidate;
+	}
+	return joinUploadPath(dir, stem + "_upload" + ext);
+}
+
+void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers)
+{
+	ClientState *cs = static_cast<ClientState*>(user);
+	const size_t headerCount = headers.size();
+	if (cs)
+	{
+		cs->mpCtx.partCount++;
+		cs->mpCtx.fieldName.clear();
+		cs->mpCtx.safeFilename.clear();
+		cs->mpCtx.safeFilenameRaw.clear();
+		cs->mpCtx.fieldBuffer.clear();
+		cs->mpCtx.pendingWrite.clear();
+		cs->mpCtx.currentFilePath.clear();
+		cs->mpCtx.partBytes = 0;
+		cs->mpCtx.writingFile = false;
+		if (cs->mpCtx.fileFd >= 0)
 		{
-			int fd = m_pollfds[i].fd;
+			::close(cs->mpCtx.fileFd);
+			cs->mpCtx.fileFd = -1;
+		}
+	}
 
-			std::cout << "[DEBUG] fd: " << fd
-					  << " events: " << m_pollfds[i].events
-					  << " revents: " << m_pollfds[i].revents << std::endl;
-
-			if (m_pollfds[i].revents & POLLIN)
+	std::string formName;
+	std::string fileName;
+	std::map<std::string,std::string>::const_iterator it = headers.find("content-disposition");
+	if (it != headers.end())
+	{
+		std::string raw = trimCopy(it->second);
+		bool firstToken = true;
+		size_t pos = 0;
+		while (pos < raw.size())
+		{
+			size_t semi = raw.find(';', pos);
+			std::string token = raw.substr(pos, (semi == std::string::npos) ? std::string::npos : semi - pos);
+			token = trimCopy(token);
+			if (!token.empty())
 			{
-				if (m_serverFds.count(fd))
+				if (firstToken)
 				{
-					int client_fd = accept(fd, NULL, NULL);
-					if (client_fd >= 0)
-					{
-						std::cout << "Accepted new client: fd " << client_fd << std::endl;
-					
-						if (fcntl(client_fd, F_SETFL, O_NONBLOCK) < 0)
-						{
-							perror("fcntl(F_SETFL) failed");
-							close(client_fd);
-							continue;
-						}
-					
-						struct pollfd client_poll;
-						client_poll.fd = client_fd;
-						client_poll.events = POLLIN;
-						client_poll.revents = 0;
-						m_pollfds.push_back(client_poll);
-					
-						m_clientBuffers[client_fd] = "";
-						std::cout << "[DEBUG] Client fd " << client_fd << " added to poll()" << std::endl;
-					}
-					else
-					{
-						perror("accept() failed");
-					}
+					firstToken = false;
 				}
 				else
 				{
-					char buffer[1024];
-					int bytes = recv(fd, buffer, sizeof(buffer), 0);
-
-					if (bytes <= 0)
-					{
-						std::cout << "Client disconnected: fd " << fd << std::endl;
-						close(fd);
-						m_clientBuffers.erase(fd);
-						m_pollfds.erase(m_pollfds.begin() + i);
-						--i;
-					}
-					else
-					{
-						m_clientBuffers[fd].append(buffer, bytes);
-
-						if (m_clientBuffers[fd].find("\r\n\r\n") != std::string::npos)
-						{
-							Request req = parseRequest(m_clientBuffers[fd]);
-
-							std::cout << "[PARSED] Method: " << req.method << "\n";
-							std::cout << "[PARSED] Path: " << req.path << "\n";
-							std::cout << "[PARSED] Version: " << req.http_version << "\n";
-
-							for (std::map<std::string, std::string>::iterator it = req.headers.begin();
-								it != req.headers.end(); ++it)
-								std::cout << "[HEADER] " << it->first << ": " << it->second << "\n";
-
-							std::string basePath = "./www";
-							std::string filePath = req.path;
-							if (filePath == "/")
-								filePath = "/index.html";
-							std::string fullPath = basePath + filePath;
-							if (!isPathSafe(basePath, fullPath))
-							{
-								std::string body = "<h1>403 Forbidden</h1>";
-								std::ostringstream oss;
-								oss << "HTTP/1.1 403 Forbidden\r\n";
-								oss << "Content-Length: " << body.size() << "\r\n";
-								oss << "Content-Type: text/html\r\n\r\n";
-								oss << body;
-								std::string response = oss.str();
-								send(fd, response.c_str(), response.size(), 0);
-								close(fd);
-								m_clientBuffers.erase(fd);
-								m_pollfds.erase(m_pollfds.begin() + i);
-								--i;
-								continue;
-							}
-							std::string response;
-							if (file_utils::exists(fullPath))
-							{
-								std::string body = file_utils::readFile(fullPath);								std::ostringstream oss;
-								oss << "HTTP/1.1 200 OK\r\n";
-								oss << "Content-Length: " << body.size() << "\r\n";
-								oss << "Content-Type: text/html\r\n"; // TODO: detect MIME type
-								oss << "\r\n";
-								oss << body;
-								response = oss.str();
-							}
-							else
-							{
-								std::string body = "<h1>404 Not Found</h1>";
-								std::ostringstream oss;
-								oss << "HTTP/1.1 404 Not Found\r\n";
-								oss << "Content-Length: " << body.size() << "\r\n";
-								oss << "Content-Type: text/html\r\n";
-								oss << "\r\n";
-								oss << body;
-								response = oss.str();
-							}
-
-							send(fd, response.c_str(), response.size(), 0);
-
-							close(fd);
-							m_clientBuffers.erase(fd);
-							m_pollfds.erase(m_pollfds.begin() + i);
-							--i;
-						}
-						else
-						{
-							std::cout << "Received partial data from fd " << fd << ": " << m_clientBuffers[fd] << std::endl;
-						}
-					}
+					size_t eq = token.find('=');
+					std::string key = (eq == std::string::npos) ? token : token.substr(0, eq);
+					std::string value = (eq == std::string::npos) ? std::string() : token.substr(eq + 1);
+					key = toLowerCopy(trimCopy(key));
+					value = trimCopy(value);
+					if (!value.empty())
+						value = trimQuotes(value);
+					if (key == "name")
+						formName = value;
+					else if (key == "filename")
+						fileName = value;
 				}
+			}
+			if (semi == std::string::npos)
+				break;
+			pos = semi + 1;
+		}
+	}
+
+	if (cs)
+	{
+		cs->mpCtx.fieldName = formName;
+		cs->mpCtx.safeFilenameRaw = fileName;
+		cs->mpCtx.writingFile = !fileName.empty();
+	}
+
+	if (cs && cs->mpCtx.writingFile && !cs->multipartError)
+	{
+		if (cs->uploadDir.empty() || !dirExists(cs->uploadDir))
+		{
+			LOG("[multipart] upload dir unavailable: %s\n", cs->uploadDir.c_str());
+			SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
+				"<h1>500 Internal Server Error</h1><p>Upload directory unavailable.</p>");
+			cs->mpCtx.writingFile = false;
+		}
+		else
+		{
+			const std::string safe = sanitizeMultipartFilename(fileName);
+			const std::string fullPath = makeUniqueUploadPath(cs->uploadDir, safe);
+			int fd = ::open(fullPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+			if (fd < 0)
+			{
+				LOG("[multipart] failed to open %s: %s\n", fullPath.c_str(), std::strerror(errno));
+				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
+					"<h1>500 Internal Server Error</h1><p>Unable to create upload file.</p>");
+				cs->mpCtx.writingFile = false;
+			}
+			else
+			{
+				cs->mpCtx.fileFd = fd;
+				cs->mpCtx.currentFilePath = fullPath;
+				size_t slash = fullPath.find_last_of('/');
+				cs->mpCtx.safeFilename = (slash == std::string::npos) ? fullPath : fullPath.substr(slash + 1);
+				cs->mpCtx.partBytes = 0;
+				LOG("[multipart] writing file %s\n", cs->mpCtx.currentFilePath.c_str());
 			}
 		}
 	}
+
+	LOG("[multipart] part begin headers=%lu name=\"%s\" filename=\"%s\"\n",
+	    static_cast<unsigned long>(headerCount),
+	    formName.c_str(),
+	    fileName.c_str());
 }
- */
+
+void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
+{
+	ClientState *cs = static_cast<ClientState*>(user);
+	if (!cs)
+		return;
+	cs->debugMultipartBytes += n;
+
+	if (cs->mpCtx.writingFile && cs->mpCtx.fileFd >= 0 && !cs->multipartError)
+	{
+		size_t written = 0;
+		while (written < n)
+		{
+			ssize_t w = ::write(cs->mpCtx.fileFd, buf + written, n - written);
+			if (w < 0)
+			{
+				if (errno == EINTR)
+					continue;
+				LOG("[multipart] write error: %s\n", std::strerror(errno));
+				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
+					"<h1>500 Internal Server Error</h1><p>Failed while writing upload.</p>");
+				break;
+			}
+			if (w == 0)
+				break;
+			written += static_cast<size_t>(w);
+			cs->mpCtx.partBytes += static_cast<size_t>(w);
+			if (cs->maxFilePerPart > 0 && cs->mpCtx.partBytes > cs->maxFilePerPart)
+			{
+				LOG("[multipart] part exceeded limit (%lu > %lu)\n",
+				    static_cast<unsigned long>(cs->mpCtx.partBytes),
+				    static_cast<unsigned long>(cs->maxFilePerPart));
+				SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
+					"<h1>413 Payload Too Large</h1><p>Upload exceeded allowed size.</p>");
+				break;
+			}
+		}
+	}
+	else if (!cs->multipartError)
+	{
+		const size_t CAP = 64 * 1024;
+		size_t cur = cs->mpCtx.fieldBuffer.size();
+		size_t room = (cur < CAP) ? (CAP - cur) : 0;
+		size_t toCopy = room < n ? room : n;
+		if (toCopy > 0)
+			cs->mpCtx.fieldBuffer.append(buf, toCopy);
+		if (toCopy < n)
+		{
+			LOG("[multipart] field too large (>%lu bytes)\n", static_cast<unsigned long>(CAP));
+			SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
+				"<h1>413 Payload Too Large</h1><p>Form field exceeded allowed size.</p>");
+		}
+	}
+
+	LOG("[multipart] part data chunk=%lu total=%lu\n",
+	    static_cast<unsigned long>(n),
+	    static_cast<unsigned long>(cs->debugMultipartBytes));
+}
+
+void SocketManager::onPartEndThunk(void* user)
+{
+	ClientState *cs = static_cast<ClientState*>(user);
+	if (cs && cs->mpCtx.writingFile)
+	{
+		if (cs->mpCtx.fileFd >= 0)
+		{
+			::close(cs->mpCtx.fileFd);
+			cs->mpCtx.fileFd = -1;
+		}
+		if (cs->multipartError)
+		{
+			if (!cs->mpCtx.currentFilePath.empty())
+				::unlink(cs->mpCtx.currentFilePath.c_str());
+		}
+		else if (!cs->mpCtx.currentFilePath.empty())
+		{
+			cs->mpCtx.savedNames.push_back(cs->mpCtx.currentFilePath);
+			LOG("[multipart] saved %s\n", cs->mpCtx.currentFilePath.c_str());
+		}
+		cs->mpCtx.currentFilePath.clear();
+		cs->mpCtx.writingFile = false;
+	}
+	else if (cs)
+	{
+		if (!cs->multipartError && !cs->mpCtx.fieldName.empty())
+			cs->mpCtx.fields[cs->mpCtx.fieldName] = cs->mpCtx.fieldBuffer;
+		cs->mpCtx.fieldBuffer.clear();
+		cs->mpCtx.fieldName.clear();
+	}
+
+	LOG("[multipart] part end (count=%lu totalBytes=%lu)\n",
+	    static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u),
+	    static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u));
+}
