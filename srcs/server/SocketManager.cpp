@@ -28,6 +28,7 @@
 #include <cstring> //for std::strerror
 #include <cctype>
 
+
 /*
 	1. getaddrinfo();
 	2. socket();
@@ -602,6 +603,21 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				return false;
 			}
 
+			if (st.isMultipart && drained > 0)
+			{
+				MultipartStreamParser::Result mpRes =
+					st.mp.feed(st.bodyBuffer.data(), drained);
+				st.bodyBuffer.clear();
+				if (mpRes == MultipartStreamParser::ERR)
+				{
+					Response err = makeHtmlError(400, "Malformed multipart body",
+						"<h1>400 Malformed multipart body</h1>");
+					finalizeAndQueue(fd, st.req, err, false, true);
+					setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+					return false;
+				}
+			}
+
 			if (st.chunkDec.hasError())
 			{
 				Response err = makeHtmlError(400, "Bad Request",
@@ -804,6 +820,17 @@ void SocketManager::handleClientRead(int fd)
 				//               set st.phase to READING_BODY or READY_TO_DISPATCH
 				// - if bad request: queue error response + set st.phase = SENDING_RESPONSE, return false
 				return; // need more data or we already have an error
+
+			if (st.phase == ClientState::READING_BODY && st.isMultipart && !st.multipartInit)
+			{
+				st.mp.reset(st.multipartBoundary,
+				            &SocketManager::onPartBeginThunk,
+				            &SocketManager::onPartDataThunk,
+				            &SocketManager::onPartEndThunk,
+				            &st);
+				st.multipartInit = true;
+				std::cout << "[fd" << fd << "] multipart parser reset";
+			}
 		}
 		// If we just transitioned to READING_BODY, try to consume immediately
 		if (st.phase == ClientState::READING_BODY)
@@ -1090,3 +1117,20 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	return true;
 }
 
+void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers)
+{
+	(void)user;
+	(void)headers;
+}
+
+void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
+{
+	(void)user;
+	(void)buf;
+	(void)n;
+}
+
+void SocketManager::onPartEndThunk(void* user)
+{
+	(void)user;
+}
