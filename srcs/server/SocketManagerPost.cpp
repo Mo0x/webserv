@@ -7,6 +7,11 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <signal.h>
+#include <errno.h>
 
 static std::string joinPath(const std::string &a, const std::string &b)
 {
@@ -86,6 +91,8 @@ static std::string makeUploadFileName(const std::string &hint)
     // }
 */
 
+//TODO review this FUNCTIOn !!! Understand
+
 void SocketManager::startCgiDispatch(int fd,
                                      ClientState &st,
                                      const ServerConfig &server,
@@ -123,6 +130,114 @@ void SocketManager::startCgiDispatch(int fd,
 	// Flip outer phase — the event loop will later spawn/drive the CGI
 	setPhase(fd, st, ClientState::CGI_RUNNING, "startCgiDispatch");
 
+	// ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
+	int inPipe[2], outPipe[2];
+	if (::pipe(inPipe)  < 0 || ::pipe(outPipe) < 0) {
+		Response err = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>pipe() failed.</p>");
+		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+		return;
+	}
+	int fl;
+	fl = fcntl(inPipe[1], F_GETFL, 0);  if (fl != -1) fcntl(inPipe[1], F_SETFL, fl | O_NONBLOCK);
+	fl = fcntl(outPipe[0], F_GETFL, 0); if (fl != -1) fcntl(outPipe[0], F_SETFL, fl | O_NONBLOCK);
+	pid_t pid = ::fork();
+	if (pid < 0) {
+		::close(inPipe[0]); ::close(inPipe[1]);
+		::close(outPipe[0]); ::close(outPipe[1]);
+		Response err = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>fork() failed.</p>");
+		finalizeAndQueue(fd, st.req, err, false, true);
+		return;
+	}
+
+	if (pid == 0) {
+		// ---- CHILD ----
+		// stdio hookup
+		::dup2(inPipe[0],  STDIN_FILENO);
+		::dup2(outPipe[1], STDOUT_FILENO);
+		// close inherited ends we don't need
+		::close(inPipe[1]); ::close(outPipe[0]);
+
+		// close any listening/client fds you keep in m_pollfds to avoid leaks in child
+		// (Optional: iterate and close every fd except 0/1/2)
+		for (size_t i = 0; i < m_pollfds.size(); ++i) {
+			int cfd = m_pollfds[i].fd;
+			if (cfd > 2) ::close(cfd);
+		}
+
+		// chdir to working dir
+		if (!st.cgi.workingDir.empty()) ::chdir(st.cgi.workingDir.c_str());
+
+		// ---- Build argv ----
+		std::vector<char*> argv;
+		const std::string ext = getFileExtension(st.req.path);
+		const ServerConfig &srv = server;
+		(void)srv; //do we need it?
+		std::map<std::string,std::string>::const_iterator itInterp = route.cgi_extension.find(ext);
+		if (itInterp != route.cgi_extension.end() && !itInterp->second.empty()) {
+			// interpreter + script
+			argv.push_back(const_cast<char*>(itInterp->second.c_str()));
+			argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));
+		} else {
+			// direct exec (shebang)
+			argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));
+		}
+		argv.push_back(NULL);
+
+		// ---- Build envp (minimal; you can enrich later) ----
+		std::vector<std::string> envStore;
+		std::vector<char*> envp;
+		envStore.push_back("GATEWAY_INTERFACE=CGI/1.1");
+		envStore.push_back(std::string("REQUEST_METHOD=") + st.req.method);
+		envStore.push_back(std::string("SERVER_PROTOCOL=") + st.req.http_version);
+		// CONTENT_LENGTH if body present (decoded body length)
+		if (!st.cgi.inBuf.empty()) {
+			envStore.push_back(std::string("CONTENT_LENGTH=") + to_string(st.cgi.inBuf.size()));
+		}
+		// CONTENT_TYPE (if present)
+		std::map<std::string,std::string>::const_iterator itCT = st.req.headers.find("content-type");
+		if (itCT != st.req.headers.end()) envStore.push_back(std::string("CONTENT_TYPE=") + itCT->second);
+		// SCRIPT_FILENAME / SCRIPT_NAME
+		envStore.push_back(std::string("SCRIPT_FILENAME=") + st.cgi.scriptFsPath);
+		envStore.push_back(std::string("SCRIPT_NAME=") + st.req.path);
+		// (Add QUERY_STRING, SERVER_NAME, SERVER_PORT, REMOTE_ADDR, HTTP_* later)
+
+		for (size_t i = 0; i < envStore.size(); ++i) envp.push_back(const_cast<char*>(envStore[i].c_str()));
+		envp.push_back(NULL);
+
+		// exec
+		::execve(argv[0], &argv[0], &envp[0]);
+		_exit(127); // exec failed
+	}
+
+	// ---- PARENT ----
+	::close(inPipe[0]);
+	::close(outPipe[1]);
+
+	st.cgi.pid      = pid;
+	st.cgi.stdin_w  = inPipe[1];
+	st.cgi.stdout_r = outPipe[0];
+
+	// If empty body, close stdin immediately (CGI often waits for EOF)
+	if (st.cgi.inBuf.empty()) {
+		::close(st.cgi.stdin_w);
+		st.cgi.stdin_w = -1;
+		st.cgi.stdin_closed = true;
+	} else {
+		st.cgi.stdin_closed = false;
+	}
+
+	// Register pipe fds in poll()
+	addPollFd(st.cgi.stdout_r, POLLIN);
+	m_cgiStdoutToClient[st.cgi.stdout_r] = fd;
+
+	if (st.cgi.stdin_w != -1) {
+		addPollFd(st.cgi.stdin_w, POLLOUT);
+		m_cgiStdinToClient[st.cgi.stdin_w] = fd;
+	}
+
+	std::cerr << "[fd " << fd << "] CGI spawned pid=" << pid
+			<< " stdin_w=" << st.cgi.stdin_w
+			<< " stdout_r=" << st.cgi.stdout_r << std::endl;
 	// Optional debug
 	std::cerr << "[fd " << fd << "] CGI dispatch : wd=" << st.cgi.workingDir.c_str() << "script=" << st.cgi.scriptFsPath.c_str() << std::endl;
 }

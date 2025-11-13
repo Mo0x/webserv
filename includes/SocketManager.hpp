@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/13 16:58:12 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/13 17:47:13 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -144,6 +144,9 @@ class SocketManager
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
 	std::map<int, bool> m_isChunked;
+	// cgi map
+	std::map<int,int> m_cgiStdoutToClient;
+	std::map<int,int> m_cgiStdinToClient;
 
 	public:
 	SocketManager(const Config &config);
@@ -246,6 +249,20 @@ class SocketManager
 						ClientState &st,
 						const ServerConfig &server,
 						const RouteConfig &route);
+	bool tryCgiDispatchNow(int fd,
+						ClientState &st,
+						const ServerConfig &srv,
+						const RouteConfig &route);
+	void addPollFd(int fd, short events);
+	void modPollEvents(int fd, short setMask, short clearMask);
+	void delPollFd(int fd);
+	bool isCgiStdout(int fd) const;
+	bool isCgiStdin (int fd) const;
+
+	// New handlers you’ll call from the poll loop
+	void handleCgiWritable(int pipefd);
+	void handleCgiReadable(int pipefd);
+	void handleCgiPipeError(int pipefd);
 };
 
 #endif

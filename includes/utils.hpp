@@ -22,7 +22,7 @@ std::string toLowerCopy(const std::string &str);
 std::string trimCopy(const std::string &s);
 bool std_to_hex(const std::string &hex_part, size_t &ret);
 std::string getFileExtension(const std::string &path);
-static std::string joinPaths(const std::string &a, const std::string &b);
-static unsigned long long now_ms();
+std::string joinPaths(const std::string &a, const std::string &b);
+unsigned long long now_ms();
 
 #endif

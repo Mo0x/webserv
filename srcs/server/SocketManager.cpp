@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/12 16:16:34 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/13 18:00:13 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,7 +21,7 @@
 #include <string>     // include <cstdiocket.hccept
 #include <sys/socket.h> //accept()
 #include <cstdio>
-#include <fcntl.h> 
+#include <fcntl.h>
 #include <sstream> // for std::ostringstream
 #include <cstdlib>
 #include <cerrno>
@@ -90,27 +90,45 @@ static const char* phaseToStr(ClientState::Phase p)
 		case ClientState::READING_BODY:      return "READING_BODY";
 		case ClientState::READY_TO_DISPATCH: return "READY_TO_DISPATCH";
 		case ClientState::SENDING_RESPONSE:  return "SENDING_RESPONSE";
+		case ClientState::CGI_RUNNING:       return "CGI_RUNNING";
 		case ClientState::CLOSED:            return "CLOSED";
 	}
 	return "?";
 }
 void SocketManager::setPhase(int fd,
-                            ClientState &st,
-                            ClientState::Phase newp,
-                            const char* where)
+							ClientState &st,
+							ClientState::Phase newp,
+							const char* where)
 {
-    if (st.phase != newp) {
-        std::cerr << "[fd " << fd << "] phase " << phaseToStr(st.phase)
-                  << " -> " << phaseToStr(newp)
-                  << " at " << where << std::endl;
-    }
-    st.phase = newp;
+	if (st.phase != newp) {
+		std::cerr << "[fd " << fd << "] phase " << phaseToStr(st.phase)
+				  << " -> " << phaseToStr(newp)
+				  << " at " << where << std::endl;
+	}
+	st.phase = newp;
 }
 
 SocketManager::SocketManager(const Config &config) :
 	m_config(config)
 {
 	return ;
+}
+
+static bool isCgiEndpoint(const RouteConfig &route, const std::string &urlPath)
+{
+	const std::string ext = getFileExtension(urlPath);
+	return !ext.empty() && route.cgi_extension.find(ext) != route.cgi_extension.end();
+}
+bool SocketManager::tryCgiDispatchNow(int fd,
+									  ClientState &st,
+									  const ServerConfig &srv,
+									  const RouteConfig &route)
+{
+	if (!isCgiEndpoint(route, st.req.path))
+		return false;
+
+	startCgiDispatch(fd, st, srv, route); 
+	return true;
 }
 
 void SocketManager::resetMultipartState(ClientState &st)
@@ -235,7 +253,7 @@ void SocketManager::cleanupMultipartFiles(ClientState &st, bool unlinkSaved)
 	if (unlinkSaved)
 	{
 		for (std::vector<std::string>::iterator it = st.mpCtx.savedNames.begin();
-		     it != st.mpCtx.savedNames.end(); ++it)
+			 it != st.mpCtx.savedNames.end(); ++it)
 			::unlink(it->c_str());
 		st.mpCtx.savedNames.clear();
 	}
@@ -273,7 +291,7 @@ void SocketManager::queueMultipartSummary(int fd, ClientState &st)
 	else
 	{
 		for (std::map<std::string,std::string>::const_iterator it = st.mpCtx.fields.begin();
-		     it != st.mpCtx.fields.end(); ++it)
+			 it != st.mpCtx.fields.end(); ++it)
 		{
 			body << "  - " << it->first << ": " << it->second << "\n";
 		}
@@ -342,29 +360,54 @@ void SocketManager::initPoll()
 void SocketManager::run()
 {
 	initPoll();
-	while (true)
+
+	for (;;)
 	{
-		int activity = poll(m_pollfds.data(), m_pollfds.size(), -1);
-		if (activity < 0 )
-		{
-			std::cerr << "Poll error" << std::endl;
-			continue ;
+		// C++98-safe pointer for poll()
+		struct pollfd* pbase = m_pollfds.empty() ? NULL : &m_pollfds[0];
+		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), -1);
+		if (rc < 0) {
+			if (errno == EINTR) continue;
+			std::cerr << "poll() error: " << std::strerror(errno) << std::endl;
+			continue;
 		}
-		for (size_t i = 0; i < m_pollfds.size(); ++i)
-		{
-			int fd = m_pollfds[i].fd;
-			short revents = m_pollfds[i].revents;
-			if (revents & POLLIN)
-			{
-				if (isListeningSocket(fd))
+
+		// Snapshot (fd, revents) so handlers can mutate m_pollfds safely
+		std::vector< std::pair<int, short> > events;
+		events.reserve(m_pollfds.size());
+		for (size_t i = 0; i < m_pollfds.size(); ++i) {
+			if (m_pollfds[i].revents != 0)
+				events.push_back(std::make_pair(m_pollfds[i].fd, m_pollfds[i].revents));
+		}
+
+		// Drive events (separate tests so POLLIN+POLLOUT both handled)
+		for (size_t i = 0; i < events.size(); ++i) {
+			int   fd      = events[i].first;
+			short revents = events[i].second;
+
+			if (revents & POLLIN) {
+				if (isListeningSocket(fd)) {
 					handleNewConnection(fd);
-				else
+				} else if (isCgiStdout(fd)) {
+					handleCgiReadable(fd);
+				} else {
 					handleClientRead(fd);
+				}
 			}
-			else if (revents & POLLOUT)
-				handleClientWrite(fd);
-			else if (revents & (POLLERR | POLLHUP | POLLNVAL))
-				handleClientDisconnect(fd);
+			if (revents & POLLOUT) {
+				if (isCgiStdin(fd)) {
+					handleCgiWritable(fd);
+				} else {
+					handleClientWrite(fd);
+				}
+			}
+			if (revents & (POLLERR | POLLHUP | POLLNVAL)) {
+				if (isCgiStdout(fd) || isCgiStdin(fd)) {
+					handleCgiPipeError(fd);
+				} else {
+					handleClientDisconnect(fd);
+				}
+			}
 		}
 	}
 }
@@ -420,25 +463,25 @@ void SocketManager::handleNewConnection(int listen_fd)
 	}
 
 	// --- NEW: insert refactored per-connection state so handleClientRead() works
-        ClientState st = ClientState();
-        setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
-        st.recvBuffer     = std::string();
+		ClientState st = ClientState();
+		setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
+		st.recvBuffer     = std::string();
 	st.bodyBuffer     = std::string();
 	st.isChunked      = false;
 	st.contentLength  = 0;
 	st.maxBodyAllowed = 0;
-        st.writeBuffer.clear();
-        st.forceCloseAfterWrite = false;
-        st.closing = false;
-        st.isMultipart = false;
-        st.multipartInit = false;
-        st.multipartBoundary.clear();
-        st.mpState = ClientState::MP_START;
-        st.mp = MultipartStreamParser();
-        resetMultipartState(st);
-        // If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
+		st.writeBuffer.clear();
+		st.forceCloseAfterWrite = false;
+		st.closing = false;
+		st.isMultipart = false;
+		st.multipartInit = false;
+		st.multipartBoundary.clear();
+		st.mpState = ClientState::MP_START;
+		st.mp = MultipartStreamParser();
+		resetMultipartState(st);
+		// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
 
-        m_clients[client_fd] = st;
+		m_clients[client_fd] = st;
 
 	// If you track per-fd pending-write flags/queues, clear them here to avoid
 	// the "skip read: pending write" early-return on fresh connections.
@@ -487,26 +530,26 @@ Response SocketManager::makeHtmlError(int code, const std::string& reason, const
 }
 
 void SocketManager::queueErrorAndClose(int fd, int status,
-                                                           const std::string &title,
-                                                           const std::string &html)
+														   const std::string &title,
+														   const std::string &html)
 {
-        std::map<int, ClientState>::iterator it = m_clients.find(fd);
-        if (it == m_clients.end())
-        {
-                ClientState fresh = ClientState();
-                setPhase(fd, fresh, ClientState::READING_HEADERS, "queueErrorAndClose");
-                fresh.forceCloseAfterWrite = false;
-                fresh.closing = false;
-                m_clients[fd] = fresh;
-                it = m_clients.find(fd);
-        }
-        ClientState &st = it->second;
-        if (st.closing)
-                return;
-        st.closing = true;
-        Response res = makeHtmlError(status, title, html);
-        res.close_connection = true;     // invalid headers → must close
-        finalizeAndQueue(fd, res);
+		std::map<int, ClientState>::iterator it = m_clients.find(fd);
+		if (it == m_clients.end())
+		{
+				ClientState fresh = ClientState();
+				setPhase(fd, fresh, ClientState::READING_HEADERS, "queueErrorAndClose");
+				fresh.forceCloseAfterWrite = false;
+				fresh.closing = false;
+				m_clients[fd] = fresh;
+				it = m_clients.find(fd);
+		}
+		ClientState &st = it->second;
+		if (st.closing)
+				return;
+		st.closing = true;
+		Response res = makeHtmlError(status, title, html);
+		res.close_connection = true;     // invalid headers → must close
+		finalizeAndQueue(fd, res);
 }
 
 //new helper of readIntoClientBuffer that takes ClientState
@@ -798,15 +841,15 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 					st.recvBuffer.erase(0, consumed);
 			}
 
-                        const size_t before = st.bodyBuffer.size();
-                        st.chunkDec.drainTo(st.bodyBuffer);
-                        const size_t drained = st.bodyBuffer.size() - before;
+						const size_t before = st.bodyBuffer.size();
+						st.chunkDec.drainTo(st.bodyBuffer);
+						const size_t drained = st.bodyBuffer.size() - before;
 
-                        std::cerr << "[fd " << fd << "] chunked step: consumed=" << consumed
-                                  << " drained=" << drained
-                                  << " done=" << (st.chunkDec.done() ? 1 : 0)
-                                  << " recv=" << st.recvBuffer.size()
-                                  << " body=" << st.bodyBuffer.size() << std::endl;
+						std::cerr << "[fd " << fd << "] chunked step: consumed=" << consumed
+								  << " drained=" << drained
+								  << " done=" << (st.chunkDec.done() ? 1 : 0)
+								  << " recv=" << st.recvBuffer.size()
+								  << " body=" << st.bodyBuffer.size() << std::endl;
 
 			if (st.isMultipart && drained > 0)
 			{
@@ -838,26 +881,26 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				return false;
 			}
 
-                        if (st.chunkDec.done())
-                        {
-                                if (st.isMultipart && !st.mpDone())
-                                {
-                                        Response err = makeHtmlError(400, "Bad Request",
-                                                "<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
-                                        finalizeAndQueue(fd, st.req, err, false, true);
-                                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-                                        return false;
-                                }
-                                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
-                                return true;
-                        }
+						if (st.chunkDec.done())
+						{
+								if (st.isMultipart && !st.mpDone())
+								{
+										Response err = makeHtmlError(400, "Bad Request",
+												"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
+										finalizeAndQueue(fd, st.req, err, false, true);
+										setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+										return false;
+								}
+								setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+								return true;
+						}
 
 			// No progress this tick → wait for more bytes.
-                        if (consumed == 0 && drained == 0)
-                        {
-                                std::cerr << "[fd " << fd << "] chunked step: no progress, waiting for more" << std::endl;
-                                return false;
-                        }
+						if (consumed == 0 && drained == 0)
+						{
+								std::cerr << "[fd " << fd << "] chunked step: no progress, waiting for more" << std::endl;
+								return false;
+						}
 			// else loop again (we made progress)
 		}
 	}
@@ -867,12 +910,12 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	const size_t want = st.contentLength;
 	const size_t haveNow = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
 
-        if (want <= haveNow)
-        {
-                // Already complete (shouldn't generally happen here, but be defensive)
-                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
-                return true;
-        }
+		if (want <= haveNow)
+		{
+				// Already complete (shouldn't generally happen here, but be defensive)
+				setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+				return true;
+		}
 
 	if (!st.recvBuffer.empty())
 	{
@@ -910,20 +953,20 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
 		// Check completion
 	const size_t haveTotal = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
-        if (haveTotal >= want)
-        {
-                if (st.isMultipart && !st.mpDone())
-                {
-                        Response err = makeHtmlError(400, "Bad Request",
-                                "<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
-                        finalizeAndQueue(fd, st.req, err, false, true);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-                        return false;
-                }
-                // Body complete — any remaining st.recvBuffer is pipelined next request
-                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
-                return true;
-        }
+		if (haveTotal >= want)
+		{
+				if (st.isMultipart && !st.mpDone())
+				{
+						Response err = makeHtmlError(400, "Bad Request",
+								"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
+						finalizeAndQueue(fd, st.req, err, false, true);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+						return false;
+				}
+				// Body complete — any remaining st.recvBuffer is pipelined next request
+				setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+				return true;
+		}
 	// Need more bytes
 	return false;
 }
@@ -961,11 +1004,11 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	}
 	// DELETE to WIRE HERE NEXT
 
-    // if (st.req.method == "DELETE") {
-    //     handleDeleteLegacy(fd, st.req, server);
-    //     st.phase = ClientState::SENDING_RESPONSE;
-    //     return;
-    // }
+	// if (st.req.method == "DELETE") {
+	//     handleDeleteLegacy(fd, st.req, server);
+	//     st.phase = ClientState::SENDING_RESPONSE;
+	//     return;
+	// }
 
 	//Fallback
 	std::cerr << "[fd " << fd << "] finalizeRequestAndQueueResponse enter" << std::endl;
@@ -991,11 +1034,11 @@ void SocketManager::handleClientRead(int fd)
 
 	if (st.closing)
 	{
-	        return;
+			return;
 	}
 
 	std::cerr << "[fd " << fd << "] enter handleClientRead phase=" << phaseToStr(st.phase)
-	          << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
+			  << " recv=" << st.recvBuffer.size() << " body=" << st.bodyBuffer.size() << std::endl;
 
 	// Flush any pending response before reading more request data.
 	if (st.phase == ClientState::SENDING_RESPONSE || clientHasPendingWrite(st))
@@ -1082,10 +1125,10 @@ void SocketManager::handleClientRead(int fd)
 			if (st.phase == ClientState::READING_BODY && st.isMultipart && !st.multipartInit)
 			{
 				st.mp.reset(st.multipartBoundary,
-				            &SocketManager::onPartBeginThunk,
-				            &SocketManager::onPartDataThunk,
-				            &SocketManager::onPartEndThunk,
-				            &st);
+							&SocketManager::onPartBeginThunk,
+							&SocketManager::onPartDataThunk,
+							&SocketManager::onPartEndThunk,
+							&st);
 				st.multipartInit = true;
 				std::cout << "[fd" << fd << "] multipart parser reset";
 			}
@@ -1107,6 +1150,12 @@ void SocketManager::handleClientRead(int fd)
 	// 3) Dispatch if ready
 	if (st.phase == ClientState::READY_TO_DISPATCH)
 	{
+		   // BEFORE finalize, resolve the same server/route you already use there:
+		const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[fd]];
+		const RouteConfig  *rt  = findMatchingLocation(srv, st.req.path);
+
+		if (rt && tryCgiDispatchNow(fd, st, srv, *rt))
+			return; // CGI matched → phase set to CGI_RUNNING, skip finalize
 		std::cerr << "[fd " << fd << "] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse" << std::endl;
 		finalizeRequestAndQueueResponse(fd, st);
 		// finalizeRequestAndQueueResponse() should:
@@ -1244,12 +1293,12 @@ void SocketManager::finalizeAndQueue(int fd, const Request &req, Response &res, 
 		teardownMultipart(st, unlinkSaved);
 	}
 
-        const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
-        const bool force_close = close_it || st.closing;
-        res.close_connection = force_close;
+		const bool close_it = shouldCloseAfterThisResponse(res.status_code, headers_complete, body_expected, body_fully_consumed, client_close);
+		const bool force_close = close_it || st.closing;
+		res.close_connection = force_close;
 
-        st.writeBuffer = build_http_response(res);
-        st.forceCloseAfterWrite = force_close;
+		st.writeBuffer = build_http_response(res);
+		st.forceCloseAfterWrite = force_close;
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
 	tryFlushWrite(fd, st);
 }
@@ -1270,18 +1319,18 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 	const bool body_fully_consumed    = true;
 	const bool client_close           = true; // <- force close in no-context paths
 
-        const bool close_it = shouldCloseAfterThisResponse(
-                /*status_code*/ res.status_code,
-                headers_complete,
-                body_expected,
-                body_fully_consumed,
-                client_close
-        );
-        const bool force_close = close_it || st.closing;
-        res.close_connection = force_close;
+		const bool close_it = shouldCloseAfterThisResponse(
+				/*status_code*/ res.status_code,
+				headers_complete,
+				body_expected,
+				body_fully_consumed,
+				client_close
+		);
+		const bool force_close = close_it || st.closing;
+		res.close_connection = force_close;
 
-        st.writeBuffer = build_http_response(res);
-        st.forceCloseAfterWrite = force_close;
+		st.writeBuffer = build_http_response(res);
+		st.forceCloseAfterWrite = force_close;
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
 	tryFlushWrite(fd, st);
 }
@@ -1328,19 +1377,19 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 	st.closing = false;
 	resetRequestState(fd);
 	st.req = Request();
-        st.bodyBuffer.clear();
-        st.isChunked = false;
-        st.contentLength = 0;
-        st.maxBodyAllowed = 0;
-        st.chunkDec = ChunkedDecoder();
-        st.isMultipart = false;
-        st.multipartInit = false;
-        st.multipartBoundary.clear();
-        st.mpState = ClientState::MP_START;
-        st.mp = MultipartStreamParser();
-        resetMultipartState(st);
-        setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
-        return true;
+		st.bodyBuffer.clear();
+		st.isChunked = false;
+		st.contentLength = 0;
+		st.maxBodyAllowed = 0;
+		st.chunkDec = ChunkedDecoder();
+		st.isMultipart = false;
+		st.multipartInit = false;
+		st.multipartBoundary.clear();
+		st.mpState = ClientState::MP_START;
+		st.mp = MultipartStreamParser();
+		resetMultipartState(st);
+		setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+		return true;
 }
 
 bool SocketManager::shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const
@@ -1548,9 +1597,9 @@ void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std:
 	}
 
 	LOG("[multipart] part begin headers=%lu name=\"%s\" filename=\"%s\"\n",
-	    static_cast<unsigned long>(headerCount),
-	    formName.c_str(),
-	    fileName.c_str());
+		static_cast<unsigned long>(headerCount),
+		formName.c_str(),
+		fileName.c_str());
 }
 
 void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
@@ -1582,8 +1631,8 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			if (cs->maxFilePerPart > 0 && cs->mpCtx.partBytes > cs->maxFilePerPart)
 			{
 				LOG("[multipart] part exceeded limit (%lu > %lu)\n",
-				    static_cast<unsigned long>(cs->mpCtx.partBytes),
-				    static_cast<unsigned long>(cs->maxFilePerPart));
+					static_cast<unsigned long>(cs->mpCtx.partBytes),
+					static_cast<unsigned long>(cs->maxFilePerPart));
 				SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
 					"<h1>413 Payload Too Large</h1><p>Upload exceeded allowed size.</p>");
 				break;
@@ -1607,8 +1656,8 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 	}
 
 	LOG("[multipart] part data chunk=%lu total=%lu\n",
-	    static_cast<unsigned long>(n),
-	    static_cast<unsigned long>(cs->debugMultipartBytes));
+		static_cast<unsigned long>(n),
+		static_cast<unsigned long>(cs->debugMultipartBytes));
 }
 
 void SocketManager::onPartEndThunk(void* user)
@@ -1643,6 +1692,6 @@ void SocketManager::onPartEndThunk(void* user)
 	}
 
 	LOG("[multipart] part end (count=%lu totalBytes=%lu)\n",
-	    static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u),
-	    static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u));
+		static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u),
+		static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u));
 }
