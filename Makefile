@@ -9,6 +9,7 @@ SRCS = \
         ./srcs/cfg/Config.cpp \
         ./srcs/cfg/ConfigLexer.cpp \
         ./srcs/cfg/ConfigParser.cpp \
+		./srcs/cgi/Cgi.cpp \
 	./srcs/server/Chunked.cpp \
 	./srcs/server/ServerSocket.cpp \
 	./srcs/server/SocketManager.cpp \

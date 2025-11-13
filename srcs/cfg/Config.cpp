@@ -8,7 +8,10 @@ ServerConfig::ServerConfig () :
 
 RouteConfig::RouteConfig() :
 	autoindex(false),
-	max_body_size(0)
+	max_body_size(0),
+	cgi_path(""),
+	cgi_timeout_ms(5000),
+	cgi_max_output_bytes(5 * 1024 * 1024)
 {
 	return ;
 }

@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/12 16:16:52 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/13 16:58:12 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,6 +26,7 @@
 #include <string>
 #include <set>
 
+
 struct MultipartCtx
 {
 	FileUploadHandler          file;
@@ -37,6 +38,26 @@ struct MultipartCtx
 	bool                       writingFile;
 	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), fileFd(-1), writingFile(false) {}
 };
+
+struct Cgi
+{
+	pid_t pid;
+	int stdin_w;
+	int stdout_r;
+	bool stdin_closed;
+	std::string inBuf; //decoded request body to feed child
+	std::string outBuf; // bytes read but not yet parsed
+	bool headersParsed;
+	int cgiStatus;
+	std::map<std::string, std::string> cgiHeaders;
+	size_t bytesInTotal, bytesOutTotal;
+	unsigned long long tStartMs;
+	std::string scriptFsPath;
+	std::string workingDir;
+
+	Cgi();
+	void reset();
+};
 struct ClientState
 {
 	enum Phase
@@ -44,6 +65,7 @@ struct ClientState
 		READING_HEADERS,
 		READING_BODY,
 		READY_TO_DISPATCH,
+		CGI_RUNNING,
 		SENDING_RESPONSE,
 		CLOSED
 	};
@@ -93,6 +115,8 @@ struct ClientState
 	int multipartStatusCode;
 	std::string multipartStatusTitle;
 	std::string multipartStatusBody;
+	//CGI
+	struct Cgi cgi;
 
 	bool mpDone() const;
 
@@ -215,8 +239,13 @@ class SocketManager
 	std::string extractBoundary(const std::string& ct) const;
 	bool  routeAllowsUpload(const ClientState& st) const;
 	std::string generateUploadName(size_t index) const;
-	void  queue201UploadList(int fd, const std::vector<std::string>& names);	
+	void  queue201UploadList(int fd, const std::vector<std::string>& names);	// maybe delete we never implement
 
+	//cgi
+	void startCgiDispatch(int fd,
+						ClientState &st,
+						const ServerConfig &server,
+						const RouteConfig &route);
 };
 
 #endif

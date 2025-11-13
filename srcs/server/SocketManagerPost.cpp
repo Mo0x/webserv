@@ -29,6 +29,16 @@ static std::string joinPath(const std::string &a, const std::string &b)
 	}
 }
 
+static std::string stripLocationPrefix(const std::string &url, const std::string &locPath)
+{
+	if (locPath.empty()) return url;
+	if (url.size() < locPath.size()) return url;
+	if (url.compare(0, locPath.size(), locPath) != 0) return url;
+	std::string s = url.substr(locPath.size());
+	if (!s.empty() && s[0] == '/') s.erase(0, 1);
+	return s;
+}
+
 //create a name, and avoid collision (using timestamp from epoch)
 static std::string makeUploadFileName(const std::string &hint)
 {
@@ -75,6 +85,47 @@ static std::string makeUploadFileName(const std::string &hint)
     //     return;
     // }
 */
+
+void SocketManager::startCgiDispatch(int fd,
+                                     ClientState &st,
+                                     const ServerConfig &server,
+                                     const RouteConfig &route)
+{
+	// Decide working directory: prefer cgi_path, else route.root, else server.root
+	std::string workingDir = !route.cgi_path.empty() ? route.cgi_path
+						: (!route.root.empty()   ? route.root : server.root);
+
+	// Map URL to filesystem path under workingDir
+	const std::string rel  = stripLocationPrefix(st.req.path, route.path);
+	const std::string scriptFsPath = joinPaths(workingDir, rel);
+
+	// Fill CGI state
+	st.cgi.reset();                      // if you added reset(); else set fields like in your ctor
+	st.cgi.workingDir    = workingDir;
+	st.cgi.scriptFsPath  = scriptFsPath;
+	st.cgi.inBuf.swap(st.bodyBuffer);    // move decoded request body to CGI stdin buffer
+	st.cgi.tStartMs      = now_ms();
+	st.cgi.stdin_w       = -1;
+	st.cgi.stdout_r      = -1;
+	st.cgi.stdin_closed  = st.cgi.inBuf.empty();
+	st.cgi.headersParsed = false;
+	st.cgi.cgiStatus     = 200;
+
+	// Ensure multipart is bypassed for CGI routes
+	st.isMultipart = false;
+	st.multipartInit = false;
+	st.mpState = ClientState::MP_START;
+	st.multipartError = false;
+	st.multipartStatusCode = 0;
+	st.multipartStatusTitle.clear();
+	st.multipartStatusBody.clear();
+
+	// Flip outer phase — the event loop will later spawn/drive the CGI
+	setPhase(fd, st, ClientState::CGI_RUNNING, "startCgiDispatch");
+
+	// Optional debug
+	std::cerr << "[fd " << fd << "] CGI dispatch : wd=" << st.cgi.workingDir.c_str() << "script=" << st.cgi.scriptFsPath.c_str() << std::endl;
+}
 
 void SocketManager::handlePostUploadOrCgi(int fd, 
 									const Request &req,

@@ -405,15 +405,69 @@ RouteConfig ConfigParser::parseLocationBlock(const std::vector<Token>& tokens, s
             if (tokens[current++].value != ";")
                 throw std::runtime_error("Expected ';' after autoindex");
         }
+        // new parse for cgi
         else if (directive == "cgi_extension") {
-            ret.cgi_extension = tokens[current++].value;
-            if (tokens[current++].value != ";")
+            if (current + 1 >= tokens.size())
+                throw std::runtime_error("Expected: cgi_extension <ext> <interpreter>;");
+
+            std::string ext = tokens[current++].value;        // ".py" or "py"
+            std::string interpreter = tokens[current++].value; // path or "" (shebang)
+
+            if (!ext.empty() && ext[0] != '.')
+                ext = "." + ext;
+
+            ret.cgi_extension[ext] = interpreter;
+
+            if (current >= tokens.size() || tokens[current++].value != ";")
                 throw std::runtime_error("Expected ';' after cgi_extension");
         }
+
         else if (directive == "cgi_path") {
+            if (current >= tokens.size())
+                throw std::runtime_error("Expected path after cgi_path");
             ret.cgi_path = tokens[current++].value;
-            if (tokens[current++].value != ";")
+            if (current >= tokens.size() || tokens[current++].value != ";")
                 throw std::runtime_error("Expected ';' after cgi_path");
+        }
+        else if (directive == "cgi_timeout_ms") {
+            if (current >= tokens.size())
+                throw std::runtime_error("Expected numeric value after cgi_timeout_ms");
+            std::string v = tokens[current++].value;
+            std::istringstream is(v);
+            size_t ms = 0;
+            if (!(is >> ms))
+                throw std::runtime_error("Invalid cgi_timeout_ms: " + v);
+            ret.cgi_timeout_ms = ms;
+            if (current >= tokens.size() || tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after cgi_timeout_ms");
+        }
+        // cgi_max_output_bytes 10485760;   (# bytes)
+        else if (directive == "cgi_max_output_bytes") {
+            if (current >= tokens.size())
+                throw std::runtime_error("Expected numeric value after cgi_max_output_bytes");
+            std::string v = tokens[current++].value;
+            std::istringstream is(v);
+            size_t cap = 0;
+            if (!(is >> cap))
+                throw std::runtime_error("Invalid cgi_max_output_bytes: " + v);
+            ret.cgi_max_output_bytes = cap;
+            if (current >= tokens.size() || tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after cgi_max_output_bytes");
+        }
+
+        // cgi_pass_env VAR1 VAR2 VAR3;
+        else if (directive == "cgi_pass_env") {
+            ret.cgi_pass_env.clear();
+
+            // Collect tokens until ';'
+            if (current >= tokens.size())
+                throw std::runtime_error("Expected at least one var or ';' after cgi_pass_env");
+
+            while (current < tokens.size() && tokens[current].value != ";") {
+                ret.cgi_pass_env.push_back(tokens[current++].value);
+            }
+            if (current >= tokens.size() || tokens[current++].value != ";")
+                throw std::runtime_error("Expected ';' after cgi_pass_env");
         }
         else if (directive == "max_body_size") {
             ret.max_body_size = std::atoi(tokens[current++].value.c_str());
@@ -464,7 +518,8 @@ void printRouteConfig(const RouteConfig &route) {
     std::cout << "    index: " << route.index << std::endl;
     std::cout << "    upload_path: " << route.upload_path << std::endl;
     std::cout << "    autoindex: " << (route.autoindex ? "on" : "off") << std::endl;
-    std::cout << "    cgi_extension: " << route.cgi_extension << std::endl;
+    for (std::map<std::string, std::string>::const_iterator it = route.cgi_extension.begin(); it != route.cgi_extension.end(); it++)
+        std::cout << "    cgi_extension: " << it->first << " & " << it->second << std::endl;
     std::cout << "    cgi_path: " << route.cgi_path << std::endl;
     std::cout << "    max_body_size: " << route.max_body_size << std::endl;
     std::cout << "    redirect: " << route.redirect << std::endl;

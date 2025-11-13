@@ -21,6 +21,32 @@ bool isPathPrefix(const std::string& path, const std::string& prefix) {
 	return path[prefix.length()] == '/';
 }
 
+std::string getFileExtension(const std::string &path)
+{
+	// return extension with leading '.', or empty if none
+	std::string::size_type slash = path.rfind('/');
+	std::string::size_type dot   = path.rfind('.');
+	if (dot == std::string::npos) return "";
+	if (slash != std::string::npos && dot < slash) return "";
+	return path.substr(dot); // includes '.'
+}
+
+std::string joinPaths(const std::string &a, const std::string &b)
+{
+	if (a.empty()) return b;
+	if (b.empty()) return a;
+	if (a[a.size()-1] == '/' && b[0] == '/') return a + b.substr(1);
+	if (a[a.size()-1] != '/' && b[0] != '/') return a + "/" + b;
+	return a + b;
+}
+
+unsigned long long now_ms()
+{
+	struct timeval tv;
+	gettimeofday(&tv, 0);
+	return static_cast<unsigned long long>(tv.tv_sec * 1000ULL + (tv.tv_usec / 1000ULL));
+}
+
 /* version 2.0 of the routing logic because request with route like "/upload" werent 
 matchin our /upload/ creating the helper matchOnePass for it*/
 
