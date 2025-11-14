@@ -92,7 +92,8 @@ void SocketManager::handleCgiWritable(int pipefd)
     int clientFd = it->second;
     ClientState &st = m_clients[clientFd];
 
-    if (st.cgi.stdin_w != pipefd || st.cgi.stdin_closed) {
+    if (st.cgi.stdin_w != pipefd || st.cgi.stdin_closed) 
+    {
         // defensive
         delPollFd(pipefd);
         m_cgiStdinToClient.erase(it);
@@ -100,13 +101,18 @@ void SocketManager::handleCgiWritable(int pipefd)
     }
 
     // write as much of inBuf as possible
-    if (!st.cgi.inBuf.empty()) {
+    if (!st.cgi.inBuf.empty()) 
+    {
         ssize_t n = ::write(pipefd, &st.cgi.inBuf[0], st.cgi.inBuf.size());
-        if (n > 0) {
+        if (n > 0) 
+        {
             st.cgi.inBuf.erase(0, static_cast<size_t>(n));
             st.cgi.bytesInTotal += static_cast<size_t>(n);
-        } else if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+        } 
+        else if (n < 0) 
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) 
+            {
                 // keep POLLOUT
                 return;
             }
@@ -114,7 +120,8 @@ void SocketManager::handleCgiWritable(int pipefd)
         }
     }
 
-    if (st.cgi.inBuf.empty()) {
+    if (st.cgi.inBuf.empty()) 
+    {
         ::close(pipefd);
         st.cgi.stdin_w = -1;
         st.cgi.stdin_closed = true;
@@ -131,19 +138,26 @@ void SocketManager::handleCgiReadable(int pipefd)
 
     ClientState &st = m_clients[clientFd];
     char buf[4096];
-    for (;;) {
+    for (;;) 
+    {
         ssize_t n = ::read(pipefd, buf, sizeof(buf));
-        if (n > 0) {
+        if (n > 0) 
+        {
             st.cgi.outBuf.append(buf, static_cast<size_t>(n));
+            drainCgiOutput(clientFd);
             st.cgi.bytesOutTotal += static_cast<size_t>(n);
-        } else if (n == 0) {
+        } 
+        else if (n == 0) 
+        {
             // EOF on CGI stdout
             ::close(pipefd);
             st.cgi.stdout_r = -1;
             delPollFd(pipefd);
             m_cgiStdoutToClient.erase(it);
             break;
-        } else {
+        } 
+        else 
+        {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) break;
             // hard error -> close pipe, stop polling
             ::close(pipefd);
@@ -162,17 +176,120 @@ void SocketManager::handleCgiReadable(int pipefd)
 
 void SocketManager::handleCgiPipeError(int pipefd)
 {
-	if (isCgiStdout(pipefd)) {
+	if (isCgiStdout(pipefd)) 
+    {
 		int clientFd = m_cgiStdoutToClient[pipefd];
 		delPollFd(pipefd); ::close(pipefd);
 		m_cgiStdoutToClient.erase(pipefd);
 		m_clients[clientFd].cgi.stdout_r = -1;
 	}
-	if (isCgiStdin(pipefd)) {
+	if (isCgiStdin(pipefd)) 
+    {
 		int clientFd = m_cgiStdinToClient[pipefd];
 		delPollFd(pipefd); ::close(pipefd);
 		m_cgiStdinToClient.erase(pipefd);
 		m_clients[clientFd].cgi.stdin_w = -1;
 		m_clients[clientFd].cgi.stdin_closed = true;
 	}
+}
+
+void SocketManager::killCgiProcess(ClientState &st, int sig)
+{
+    if (st.cgi.pid > 0)
+        ::kill(st.cgi.pid, sig);
+}
+
+void SocketManager::reapCgiIfDone(ClientSate &st)
+{
+    if (st.cgi.pid > 0)
+    {
+        int status = 0;
+        pid_t r = ::waitpid(st.cgi.pid, &status, WNOHANG);
+    }
+}
+
+bool SocketManager::parseCgiHeaders(ClientSate &st, int clientFd, const RouteConfig &route)
+{
+    const std::string &buf = st.cgi.outBuf;
+    size_t pos = buf.find("\r\n\r\n");
+    size_t delim = (pos != std::string::npos) ? pos + 4 : std::string::npos;
+    if (delim == std::string::npos)
+    {
+        pos = buf.find("\n\n");
+        if (pos == std::string::npos) return false;
+        delim = pos + 2;
+    }
+
+    size_t start = 0;
+    while (start < delim)
+    {
+        size_t eol = buf.find("\r\n", start);
+        size_t adv = 2;
+        if (eol == std::string::npos || eol >= delim)
+        {
+            eol = buf.find('\n', start);
+            if (eol == std::string::npos || eol >= delim)
+                break;
+            adv = 1;
+        }
+        if (eol == start)
+        {
+            start += adv;
+            break;
+        }
+        std::string line = buf.substr(start, eol - start);
+        start = eol + adv;
+
+        size_t colon = line.find(':');
+        if (colon != std::string::npos)
+        {
+            std:;string key = line.substr(0, colon);
+            std::string val = line.substr(colon + 1);
+            while (!val.empty() && val (val[0] == ' ' || val[0] == '\t'))
+                val.erase(0,1);
+            key = toLowerCopy(key);
+            st.cgi.cgiHeaders[key] = val;
+        }
+        /*else if (!line.empty())
+        {
+        Could log here
+        }*/
+    }
+    st.cgi.outBuf.erase(0, delim);
+
+    int status = 200;
+    std::map<std::string,std::string>::const_iterator it = st.cgi.cgiHeaders.find("status");
+    if (it != st.cgi.cgiHeaders.end())
+    {
+        const std::string &sv = it->second;
+        int n = 0;
+        if (!sv.empty() && std::isDigit((unsigned char)sv[0]))
+            n = std::atoi(sv.c_str());
+        if (n >= 100 && n <= 599)
+            status = n;
+    }
+    else
+    {
+        if (st.cgi.cgiHeaders.find("location") 1= st.cgiHeaders.end())
+            status = 302;
+    }
+    st.cgi.cgiStatus = status;
+    
+    Response = res;
+    res.status_code = status;
+    res.status_message = "";
+    for (std::map<std::string, std:;string>::const_iterator itR=st.cgi.cgiHeaders.begin(); it != st.cgi.cgiHeaders.end(); ++it)
+    {
+        const std::string &k = it->first;
+        const std::string &v = it->second;
+        if (k == "status")
+            continue;
+        if (k == "content-type" || k == "location" || k = "set-cookie" || k == "cache-control")
+            res.headers[k == "content-type" ? "Content-Type" :
+                        k == "location" ? "Location" :
+                        k == "set-cookie" ? "Set-Cookie" : "Cache-Control"] = v;
+    }
+    finalizeAndQueue(clientFd, st.req, res, true, false);
+    st.cgi.headersParsed = true;
+    return true;
 }

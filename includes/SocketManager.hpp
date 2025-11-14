@@ -258,11 +258,17 @@ class SocketManager
 	void delPollFd(int fd);
 	bool isCgiStdout(int fd) const;
 	bool isCgiStdin (int fd) const;
+	//CGI output path
+	void drainCgiOutput(int clienFd)
+	bool parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route);
 
-	// New handlers you’ll call from the poll loop
+	void killCgiProcess(ClientSate &st, int sig);
+	void reapCgiIfDone(ClientState &st); // non-blockling waitpid;
+	
 	void handleCgiWritable(int pipefd);
 	void handleCgiReadable(int pipefd);
 	void handleCgiPipeError(int pipefd);
+	
 };
 
 #endif
