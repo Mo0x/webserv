@@ -216,6 +216,7 @@ void SocketManager::reapCgiIfDone(ClientState &st)
 bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route)
 {
     const std::string &buf = st.cgi.outBuf;
+    (void)route;
     size_t pos = buf.find("\r\n\r\n");
     size_t delim = (pos != std::string::npos) ? pos + 4 : std::string::npos;
     if (delim == std::string::npos)
@@ -275,21 +276,21 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
     }
     else
     {
-        if (st.cgi.cgiHeaders.find("location") 1= st.cgiHeaders.end())
+        if (st.cgi.cgiHeaders.find("location") != st.cgi.cgiHeaders.end())
             status = 302;
     }
     st.cgi.cgiStatus = status;
     
-    Response = res;
+    Response res;
     res.status_code = status;
     res.status_message = "";
-    for (std::map<std::string, std::string>::const_iterator itR=st.cgi.cgiHeaders.begin(); it != st.cgi.cgiHeaders.end(); ++it)
+    for (std::map<std::string, std::string>::const_iterator itR=st.cgi.cgiHeaders.begin(); itR != st.cgi.cgiHeaders.end(); ++itR)
     {
-        const std::string &k = it->first;
-        const std::string &v = it->second;
+        const std::string &k = itR->first;
+        const std::string &v = itR->second;
         if (k == "status")
             continue;
-        if (k == "content-type" || k == "location" || k = "set-cookie" || k == "cache-control")
+        if (k == "content-type" || k == "location" || k == "set-cookie" || k == "cache-control")
             res.headers[k == "content-type" ? "Content-Type" :
                         k == "location" ? "Location" :
                         k == "set-cookie" ? "Set-Cookie" : "Cache-Control"] = v;
@@ -297,4 +298,15 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
     finalizeAndQueue(clientFd, st.req, res, true, false);
     st.cgi.headersParsed = true;
     return true;
+}
+
+void SocketManager::drainCgiOutput(int clientFd)
+{
+    ClientState &st = m_clients[clientFd];
+    if (st.phase != ClientState::CGI_RUNNING)
+        return;
+    const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[clientFd]];
+    const RouteConfig *rt = findMatchingLocation(srv, st.req.path);
+    const size_t timeout_ms = (rt ? rt->cgi_timeout_ms : 0);
+    const size_t max_bytes = (rt ? rt->cgi_max_output_bytes : 0);
 }
