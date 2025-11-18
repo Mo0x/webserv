@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/13 17:47:13 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/18 14:11:46 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -259,10 +259,10 @@ class SocketManager
 	bool isCgiStdout(int fd) const;
 	bool isCgiStdin (int fd) const;
 	//CGI output path
-	void drainCgiOutput(int clienFd)
+	void drainCgiOutput(int clienFd);
 	bool parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route);
 
-	void killCgiProcess(ClientSate &st, int sig);
+	void killCgiProcess(ClientState &st, int sig);
 	void reapCgiIfDone(ClientState &st); // non-blockling waitpid;
 	
 	void handleCgiWritable(int pipefd);

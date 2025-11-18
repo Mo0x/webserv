@@ -9,6 +9,8 @@
 #include <cstring> //for std::strerror
 #include <cctype>
 #include <iostream>
+#include <signal.h> //kill
+#include <sys/wait.h>
 
 Cgi::Cgi() :
 	pid(-1),
@@ -196,19 +198,22 @@ void SocketManager::handleCgiPipeError(int pipefd)
 void SocketManager::killCgiProcess(ClientState &st, int sig)
 {
     if (st.cgi.pid > 0)
-        ::kill(st.cgi.pid, sig);
+        kill(st.cgi.pid, sig);
 }
 
-void SocketManager::reapCgiIfDone(ClientSate &st)
+void SocketManager::reapCgiIfDone(ClientState &st)
 {
     if (st.cgi.pid > 0)
     {
         int status = 0;
-        pid_t r = ::waitpid(st.cgi.pid, &status, WNOHANG);
+        pid_t r = waitpid(st.cgi.pid, &status, WNOHANG);
+        if (r < 0)
+            (void)r;
+            //TODOerror
     }
 }
 
-bool SocketManager::parseCgiHeaders(ClientSate &st, int clientFd, const RouteConfig &route)
+bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route)
 {
     const std::string &buf = st.cgi.outBuf;
     size_t pos = buf.find("\r\n\r\n");
@@ -243,9 +248,9 @@ bool SocketManager::parseCgiHeaders(ClientSate &st, int clientFd, const RouteCon
         size_t colon = line.find(':');
         if (colon != std::string::npos)
         {
-            std:;string key = line.substr(0, colon);
+            std::string key = line.substr(0, colon);
             std::string val = line.substr(colon + 1);
-            while (!val.empty() && val (val[0] == ' ' || val[0] == '\t'))
+            while (!val.empty() && (val[0] == ' ' || val[0] == '\t'))
                 val.erase(0,1);
             key = toLowerCopy(key);
             st.cgi.cgiHeaders[key] = val;
@@ -263,7 +268,7 @@ bool SocketManager::parseCgiHeaders(ClientSate &st, int clientFd, const RouteCon
     {
         const std::string &sv = it->second;
         int n = 0;
-        if (!sv.empty() && std::isDigit((unsigned char)sv[0]))
+        if (!sv.empty() && std::isdigit((unsigned char)sv[0]))
             n = std::atoi(sv.c_str());
         if (n >= 100 && n <= 599)
             status = n;
@@ -278,7 +283,7 @@ bool SocketManager::parseCgiHeaders(ClientSate &st, int clientFd, const RouteCon
     Response = res;
     res.status_code = status;
     res.status_message = "";
-    for (std::map<std::string, std:;string>::const_iterator itR=st.cgi.cgiHeaders.begin(); it != st.cgi.cgiHeaders.end(); ++it)
+    for (std::map<std::string, std::string>::const_iterator itR=st.cgi.cgiHeaders.begin(); it != st.cgi.cgiHeaders.end(); ++it)
     {
         const std::string &k = it->first;
         const std::string &v = it->second;
