@@ -90,39 +90,47 @@ bool SocketManager::isCgiStdin(int fd) const
 void SocketManager::handleCgiWritable(int pipefd)
 {
     std::map<int,int>::iterator it = m_cgiStdinToClient.find(pipefd);
-    if (it == m_cgiStdinToClient.end()) return;
+    if (it == m_cgiStdinToClient.end())
+        return;
+
     int clientFd = it->second;
     ClientState &st = m_clients[clientFd];
 
-    if (st.cgi.stdin_w != pipefd || st.cgi.stdin_closed) 
+    if (st.cgi.stdin_w != pipefd || st.cgi.stdin_closed)
     {
-        // defensive
         delPollFd(pipefd);
         m_cgiStdinToClient.erase(it);
         return;
     }
 
-    // write as much of inBuf as possible
-    if (!st.cgi.inBuf.empty()) 
+    bool shouldClose = st.cgi.inBuf.empty();
+    while (!st.cgi.inBuf.empty())
     {
         ssize_t n = ::write(pipefd, &st.cgi.inBuf[0], st.cgi.inBuf.size());
-        if (n > 0) 
+        if (n > 0)
         {
             st.cgi.inBuf.erase(0, static_cast<size_t>(n));
             st.cgi.bytesInTotal += static_cast<size_t>(n);
-        } 
-        else if (n < 0) 
-        {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) 
-            {
-                // keep POLLOUT
-                return;
-            }
-            // hard error -> close stdin, keep reading stdout
+            shouldClose = st.cgi.inBuf.empty();
+            continue;
         }
+
+        if (n < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+                return;
+
+            // Treat EPIPE (child closed stdin) the same as being done.
+            shouldClose = true;
+            break;
+        }
+
+        // n == 0
+        shouldClose = true;
+        break;
     }
 
-    if (st.cgi.inBuf.empty()) 
+    if (shouldClose)
     {
         ::close(pipefd);
         st.cgi.stdin_w = -1;
@@ -213,10 +221,18 @@ void SocketManager::killCgiProcess(ClientState &st, int sig)
 
 void SocketManager::reapCgiIfDone(ClientState &st)
 {
-    if (st.cgi.pid > 0)
+    if (st.cgi.pid <= 0)
+        return;
+
+    int status = 0;
+    pid_t r = ::waitpid(st.cgi.pid, &status, WNOHANG);
+    if (r > 0)
     {
-        int status = 0;
-        (void) waitpid(st.cgi.pid, &status, WNOHANG);
+        st.cgi.pid = -1;
+        if (WIFEXITED(status))
+            st.cgi.cgiStatus = WEXITSTATUS(status);
+        else
+            st.cgi.cgiStatus = 502;
     }
 }
 
@@ -225,10 +241,8 @@ static void inject_header_lines_before_body(std::string &respBuf,
 {
     if (lines.empty()) return;
     size_t p = respBuf.find("\r\n\r\n");
-    size_t adv = 4;
     if (p == std::string::npos) {
         p = respBuf.find("\n\n");
-        adv = 2;
     }
     if (p == std::string::npos) {
         // Fallback: prepend (shouldn't happen with our finalize path)
@@ -386,95 +400,133 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
 void SocketManager::drainCgiOutput(int clientFd)
 {
     std::map<int, ClientState>::iterator itc = m_clients.find(clientFd);
-    if (itc == m_clients.end()) return;
+    if (itc == m_clients.end())
+        return;
+
     ClientState &st = itc->second;
 
-    if (st.phase != ClientState::CGI_RUNNING && !clientHasPendingWrite(st)) {
-        return; // nothing to do
-    }
+    if (st.phase != ClientState::CGI_RUNNING && !clientHasPendingWrite(st))
+        return;
 
     const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[clientFd]];
-    const RouteConfig  *rt  = findMatchingLocation(srv, st.req.path);
-    const size_t timeout_ms = (rt ? rt->cgi_timeout_ms : 0);
-    const size_t max_bytes  = (rt ? rt->cgi_max_output_bytes : 0);
+    const RouteConfig  *matchedRoute  = findMatchingLocation(srv, st.req.path);
+    RouteConfig fallbackRoute;
+    const RouteConfig &route = matchedRoute ? *matchedRoute : fallbackRoute;
+    const size_t timeout_ms = route.cgi_timeout_ms;
+    const size_t max_bytes  = route.cgi_max_output_bytes;
 
-    // Timeout
-    if (timeout_ms > 0 &&
-        (now_ms() - st.cgi.tStartMs) > (unsigned long long)timeout_ms)
+    const unsigned long long elapsed = now_ms() - st.cgi.tStartMs;
+    if (timeout_ms > 0 && elapsed > static_cast<unsigned long long>(timeout_ms))
     {
         killCgiProcess(st, SIGKILL);
 
-        if (!st.cgi.headersParsed) {
-            Response err = makeHtmlError(504, "Gateway Timeout", "<h1>504 Gateway Timeout</h1>");
-            finalizeAndQueue(clientFd, st.req, err, false, true);
-        } else {
-            st.forceCloseAfterWrite = true; // end body by connection close
+        if (st.cgi.stdin_w != -1)
+        {
+            delPollFd(st.cgi.stdin_w);
+            ::close(st.cgi.stdin_w);
+            m_cgiStdinToClient.erase(st.cgi.stdin_w);
+            st.cgi.stdin_w = -1;
+            st.cgi.stdin_closed = true;
+        }
+        if (st.cgi.stdout_r != -1)
+        {
+            delPollFd(st.cgi.stdout_r);
+            ::close(st.cgi.stdout_r);
+            m_cgiStdoutToClient.erase(st.cgi.stdout_r);
+            st.cgi.stdout_r = -1;
         }
 
-        if (st.cgi.stdin_w  != -1) { ::close(st.cgi.stdin_w);  st.cgi.stdin_w  = -1; }
-        if (st.cgi.stdout_r != -1) { ::close(st.cgi.stdout_r); st.cgi.stdout_r = -1; }
+        Response err = makeHtmlError(504, "Gateway Timeout", "<h1>504 Gateway Timeout</h1>");
+        finalizeAndQueue(clientFd, st.req, err, false, true);
         reapCgiIfDone(st);
-        setPollToWrite(clientFd);
-        tryFlushWrite(clientFd, st);
         return;
     }
 
-    // If headers not sent yet, try to parse them
-    if (!st.cgi.headersParsed) {
-        if (rt && !st.cgi.outBuf.empty()) {
-            if (!parseCgiHeaders(st, clientFd, *rt)) {
-                // need more bytes for headers — just wait
-            } else {
-                // After queuing headers, phase is SENDING_RESPONSE.
-                setPollToWrite(clientFd);
-                tryFlushWrite(clientFd, st);
-            }
+    if (!st.cgi.headersParsed && !st.cgi.outBuf.empty())
+    {
+        if (parseCgiHeaders(st, clientFd, route))
+        {
+            setPollToWrite(clientFd);
+            tryFlushWrite(clientFd, st);
         }
     }
 
-    // Stream body if we have headers and output
-    if (st.cgi.headersParsed && !st.cgi.outBuf.empty()) {
-        // Enforce output cap (on forwarded body)
+    if (!st.cgi.headersParsed && st.cgi.stdout_r == -1)
+    {
+        killCgiProcess(st, SIGKILL);
+
+        if (st.cgi.stdin_w != -1)
+        {
+            delPollFd(st.cgi.stdin_w);
+            ::close(st.cgi.stdin_w);
+            m_cgiStdinToClient.erase(st.cgi.stdin_w);
+            st.cgi.stdin_w = -1;
+            st.cgi.stdin_closed = true;
+        }
+        Response err = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>CGI exited early.</p>");
+        finalizeAndQueue(clientFd, st.req, err, false, true);
+        reapCgiIfDone(st);
+        return;
+    }
+
+    if (st.cgi.headersParsed && !st.cgi.outBuf.empty())
+    {
         if (max_bytes > 0 &&
             st.cgi.bytesOutTotal + st.cgi.outBuf.size() > max_bytes)
         {
             killCgiProcess(st, SIGKILL);
-            st.forceCloseAfterWrite = true; // end by close after flush
-            if (st.cgi.stdin_w  != -1) { ::close(st.cgi.stdin_w);  st.cgi.stdin_w  = -1; }
-            if (st.cgi.stdout_r != -1) { ::close(st.cgi.stdout_r); st.cgi.stdout_r = -1; }
+
+            if (st.cgi.stdin_w != -1)
+            {
+                delPollFd(st.cgi.stdin_w);
+                ::close(st.cgi.stdin_w);
+                m_cgiStdinToClient.erase(st.cgi.stdin_w);
+                st.cgi.stdin_w = -1;
+                st.cgi.stdin_closed = true;
+            }
+            if (st.cgi.stdout_r != -1)
+            {
+                delPollFd(st.cgi.stdout_r);
+                ::close(st.cgi.stdout_r);
+                m_cgiStdoutToClient.erase(st.cgi.stdout_r);
+                st.cgi.stdout_r = -1;
+            }
+
+            Response err = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>CGI output too large.</p>");
+            finalizeAndQueue(clientFd, st.req, err, false, true);
             reapCgiIfDone(st);
-            // Optionally truncate to exactly max_bytes; simplest is to stop forwarding more.
+            return;
+        }
+
+        if (st.req.method == "HEAD")
+        {
+            st.cgi.bytesOutTotal += st.cgi.outBuf.size();
             st.cgi.outBuf.clear();
         }
         else
         {
-            if (st.req.method == "HEAD") {
-                // Drain but DO NOT forward body for HEAD
-                st.cgi.bytesOutTotal += st.cgi.outBuf.size();
-                st.cgi.outBuf.clear();
-            } else {
-                st.writeBuffer.append(st.cgi.outBuf);
-                st.cgi.bytesOutTotal += st.cgi.outBuf.size();
-                st.cgi.outBuf.clear();
-                setPollToWrite(clientFd);
-                tryFlushWrite(clientFd, st);
-            }
+            st.writeBuffer.append(st.cgi.outBuf);
+            st.cgi.bytesOutTotal += st.cgi.outBuf.size();
+            st.cgi.outBuf.clear();
+            setPollToWrite(clientFd);
+            tryFlushWrite(clientFd, st);
         }
     }
 
-    // If CGI stdout closed and nothing left to flush → finalize connection choice
-    if (st.cgi.stdout_r == -1 && !clientHasPendingWrite(st)) {
-        // If CGI did not provide Content-Length, we must end body by closing.
+    if (st.cgi.stdout_r == -1 && !clientHasPendingWrite(st))
+    {
         bool haveCL = false;
-        if (!st.cgi.cgiHeaders.empty()) {
+        if (!st.cgi.cgiHeaders.empty())
+        {
             std::map<std::string,std::string>::const_iterator itH = st.cgi.cgiHeaders.find("content-length");
             haveCL = (itH != st.cgi.cgiHeaders.end());
         }
-        if (!haveCL) {
-            st.forceCloseAfterWrite = true; // signal end-of-body via connection close
-        }
-        reapCgiIfDone(st);
+        if (!haveCL)
+            st.forceCloseAfterWrite = true;
+
         setPollToWrite(clientFd);
         tryFlushWrite(clientFd, st);
     }
+
+    reapCgiIfDone(st);
 }
