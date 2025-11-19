@@ -219,6 +219,13 @@ class SocketManager
 									const ServerConfig &server,
 									const RouteConfig *route,
 									const std::string &body);
+
+	// DELETE handler: locate file using routing, check method allowed, unlink it
+	// and queue an appropriate response (204 No Content on success).
+	void	handleDelete(int fd,
+					const Request &req,
+					const ServerConfig &server,
+					const RouteConfig *route);
 	void setPhase(int fd,
                             ClientState &st,
                             ClientState::Phase newp,

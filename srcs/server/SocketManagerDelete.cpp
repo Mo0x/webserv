@@ -1,0 +1,98 @@
+++ /home/whatamidoing/Desktop/webswork/srcs/server/SocketManagerDelete.cpp
+#include "SocketManager.hpp"
+#include "request_reponse_struct.hpp"
+#include "file_utils.hpp"
+#include "utils.hpp"
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
+
+// Implement DELETE logic in its own translation unit so it can be wired later.
+// Behavior:
+// - reuse routing to compute effective root + stripped path
+// - check method allowed on route
+// - path traversal protection via isPathSafe
+// - if target is a directory -> 403 Forbidden
+// - unlink() the file and return 204 No Content on success
+// - on errors return appropriate HTML error responses
+
+void SocketManager::handleDelete(int fd,
+                                 const Request &req,
+                                 const ServerConfig &server,
+                                 const RouteConfig *route)
+{
+    // If route not supplied, locate it
+    const RouteConfig *r = route ? route : findMatchingLocation(server, req.path);
+
+    // Check method allowed if we have a route
+    if (r)
+    {
+        if (!isMethodAllowedForRoute("DELETE", r->allowedMethods))
+        {
+            Response res = makeHtmlError(405, "Method Not Allowed", "<h1>405 Method Not Allowed</h1>");
+            // build Allow header from route
+            res.headers["Allow"] = joinAllowedMethods(normalizeAllowedForAllowHeader(r->allowedMethods));
+            finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
+            return;
+        }
+    }
+
+    std::string effectiveRoot  = (r && !r->root.empty())  ? r->root  : server.root;
+
+    // strip route prefix
+    std::string strippedPath = req.path;
+    if (r && strippedPath.find(r->path) == 0)
+        strippedPath = strippedPath.substr(r->path.length());
+    if (!strippedPath.empty() && strippedPath[0] != '/')
+        strippedPath = "/" + strippedPath;
+
+    std::string fullPath = effectiveRoot + strippedPath;
+
+    // Safety checks
+    if (!isPathSafe(effectiveRoot, fullPath))
+    {
+        Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
+        finalizeAndQueue(fd, req, res, false, true);
+        return;
+    }
+
+    // If it's a directory, refuse
+    if (dirExists(fullPath))
+    {
+        Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
+        finalizeAndQueue(fd, req, res, false, true);
+        return;
+    }
+
+    if (!fileExists(fullPath))
+    {
+        Response res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1>");
+        finalizeAndQueue(fd, req, res, false, true);
+        return;
+    }
+
+    // Attempt unlink
+    if (::unlink(fullPath.c_str()) == 0)
+    {
+        Response res;
+        res.status_code = 204;
+        res.status_message = "No Content";
+        res.headers["Content-Length"] = "0";
+        res.close_connection = false;
+        finalizeAndQueue(fd, req, res, false, true);
+        return;
+    }
+
+    // unlink failed
+    int err = errno;
+    if (err == EACCES || err == EPERM)
+    {
+        Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
+        finalizeAndQueue(fd, req, res, false, true);
+        return;
+    }
+
+    // Generic server error
+    Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1>");
+    finalizeAndQueue(fd, req, res, false, true);
+}
