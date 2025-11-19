@@ -312,7 +312,11 @@ void SocketManager::startCgiDispatch(int fd,
 
         // SCRIPT fields
         env.push_back("SCRIPT_FILENAME="+st.cgi.scriptFsPath);
-        env.push_back("SCRIPT_NAME="+makeScriptName(route.path, urlPath)); // URL path as seen by client
+		std::string scriptUrlPath, pathInfo;
+		splitScriptAndPathInfo(urlPath, route.cgi_extension, scriptUrlPath, pathInfo);
+
+		env.push_back("SCRIPT_NAME=" + makeScriptName(route.path, scriptUrlPath));
+		if (!pathInfo.empty()) env.push_back("PATH_INFO=" + pathInfo);
 
         // REQUEST_URI & QUERY_STRING
         env.push_back("REQUEST_URI="+urlPath+(query.empty()?"":"?"+query));
