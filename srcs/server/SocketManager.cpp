@@ -922,13 +922,13 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 		handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
 		return;
 	}
-	// DELETE to WIRE HERE NEXT
-
-    // if (st.req.method == "DELETE") {
-    //     handleDeleteLegacy(fd, st.req, server);
-    //     st.phase = ClientState::SENDING_RESPONSE;
-    //     return;
-    // }
+	// Handle DELETE: use the new handler implementation in SocketManagerDelete.cpp
+	if (st.req.method == "DELETE")
+	{
+		const RouteConfig *route = findMatchingLocation(server, st.req.path);
+		handleDelete(fd, st.req, server, route);
+		return;
+	}
 
 	//Fallback
 	std::cerr << "[fd " << fd << "] finalizeRequestAndQueueResponse enter" << std::endl;

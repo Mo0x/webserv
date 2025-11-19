@@ -12,6 +12,7 @@ SRCS = \
 	./srcs/server/Chunked.cpp \
 	./srcs/server/ServerSocket.cpp \
 	./srcs/server/SocketManager.cpp \
+	./srcs/server/SocketManagerDelete.cpp \
 	./srcs/server/SocketManagerHttp.cpp \
 	./srcs/server/SocketManagerPost.cpp \
 	./srcs/server/Response.cpp \
