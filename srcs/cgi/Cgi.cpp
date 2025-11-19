@@ -264,6 +264,68 @@ static void inject_header_lines_before_body(std::string &respBuf,
     respBuf.insert(p, block);
 }
 
+static bool isHopByHop(const std::string &k) {
+    return k == "connection" || k == "transfer-encoding" ||
+           k == "keep-alive" || k == "upgrade" ||
+           (k.size() >= 6 && k.compare(0, 6, "proxy-") == 0);
+}
+
+static void applyCgiHeadersToResponse(const std::map<std::string,std::string> &h,
+                                      Response &res,
+                                      /*out*/ bool &sawLocation,
+                                      /*out*/ int &cgiStatus)
+{
+    sawLocation = false;
+    cgiStatus = 200;
+
+    std::map<std::string,std::string>::const_iterator itStatus = h.find("status");
+    if (itStatus != h.end()) {
+        const std::string &v = itStatus->second;
+        if (v.size() >= 3 &&
+            std::isdigit(static_cast<unsigned char>(v[0])) &&
+            std::isdigit(static_cast<unsigned char>(v[1])) &&
+            std::isdigit(static_cast<unsigned char>(v[2])))
+        {
+            cgiStatus = (v[0]-'0')*100 + (v[1]-'0')*10 + (v[2]-'0');
+            size_t sp = v.find(' ');
+            res.status_code = cgiStatus;
+            res.status_message = (sp != std::string::npos) ? v.substr(sp + 1) : "";
+        }
+    }
+
+    for (std::map<std::string,std::string>::const_iterator it = h.begin();
+         it != h.end(); ++it)
+    {
+        const std::string &k = it->first;
+        const std::string &v = it->second;
+        if (k == "status" || isHopByHop(k))
+            continue;
+
+        if (k == "location") {
+            sawLocation = true;
+            res.headers["Location"] = v;
+            continue;
+        }
+        res.headers[k] = v; // retain lowercase unless caller normalizes
+    }
+
+    if (sawLocation && itStatus == h.end()) {
+        res.status_code = 302;
+        res.status_message = "Found";
+        cgiStatus = 302;
+    }
+
+    if (res.status_code == 0) {
+        res.status_code = cgiStatus;
+        if (res.status_code == 0)
+            res.status_code = 200;
+    }
+    if (res.status_message.empty()) {
+        if (res.status_code == 200)
+            res.status_message = "OK";
+    }
+}
+
 bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route)
 {
     const size_t CGI_HEADER_CAP = 32 * 1024;
@@ -338,46 +400,16 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
     // Drop header block from outBuf
     st.cgi.outBuf.erase(0, delim);
 
-    // Determine HTTP status
-    int status = 200;
-    std::map<std::string,std::string>::const_iterator itS = merged.find("status");
-    if (itS != merged.end()) {
-        const std::string &sv = itS->second;
-        int n = 0;
-        if (!sv.empty() && std::isdigit((unsigned char)sv[0])) n = std::atoi(sv.c_str());
-        if (n >= 100 && n <= 599) status = n;
-    } else if (merged.find("location") != merged.end()) {
-        status = 302; // Location without Status → redirect
-    }
-    st.cgi.cgiStatus = status;
-
-    // Build upstream response headers once
     Response res;
-    res.status_code = status;
-    res.status_message = ""; // optional
-    // forward selected headers (filter hop-by-hop)
-    for (std::map<std::string,std::string>::const_iterator it = merged.begin();
-         it != merged.end(); ++it)
-    {
-        const std::string &k = it->first;
-        const std::string &v = it->second;
-        if (k == "status") continue;
-        if (k == "connection" || k == "transfer-encoding" ||
-            k == "keep-alive" || k == "proxy-connection" || k == "upgrade")
-            continue;
+    res.status_code = 0;
+    res.status_message.clear();
+    res.body.clear();
+    res.close_connection = false;
 
-        if (k == "content-type")      res.headers["Content-Type"]      = v;
-        else if (k == "location")     res.headers["Location"]          = v;
-        else if (k == "content-length") res.headers["Content-Length"]  = v; // allow keep-alive if present
-        else if (k == "cache-control")  res.headers["Cache-Control"]   = v;
-        else if (k == "expires")        res.headers["Expires"]         = v;
-        else if (k == "pragma")         res.headers["Pragma"]          = v;
-        else if (k == "last-modified")  res.headers["Last-Modified"]   = v;
-        else if (k == "etag")           res.headers["ETag"]            = v;
-        else if (k == "vary")           res.headers["Vary"]            = v;
-        else if (k == "content-language") res.headers["Content-Language"] = v;
-        // ignore unknowns or add more as needed
-    }
+    bool sawLocation = false;
+    int cgiStatus = 200;
+    applyCgiHeadersToResponse(merged, res, sawLocation, cgiStatus);
+    st.cgi.cgiStatus = cgiStatus;
 
     // Queue headers. IMPORTANT: pass (body_expected=false, body_fully_consumed=true)
     // so we DON'T force-close right away; we'll stream the body manually.
@@ -513,19 +545,27 @@ void SocketManager::drainCgiOutput(int clientFd)
         }
     }
 
-    if (st.cgi.stdout_r == -1 && !clientHasPendingWrite(st))
+    if (st.cgi.stdout_r == -1)
     {
         bool haveCL = false;
+        bool haveTE = false;
         if (!st.cgi.cgiHeaders.empty())
         {
             std::map<std::string,std::string>::const_iterator itH = st.cgi.cgiHeaders.find("content-length");
-            haveCL = (itH != st.cgi.cgiHeaders.end());
+            if (itH != st.cgi.cgiHeaders.end())
+                haveCL = true;
+            std::map<std::string,std::string>::const_iterator itTE = st.cgi.cgiHeaders.find("transfer-encoding");
+            if (itTE != st.cgi.cgiHeaders.end())
+                haveTE = true;
         }
-        if (!haveCL)
+        if (!haveCL && !haveTE)
             st.forceCloseAfterWrite = true;
 
-        setPollToWrite(clientFd);
-        tryFlushWrite(clientFd, st);
+        if (!clientHasPendingWrite(st))
+        {
+            setPollToWrite(clientFd);
+            tryFlushWrite(clientFd, st);
+        }
     }
 
     reapCgiIfDone(st);
