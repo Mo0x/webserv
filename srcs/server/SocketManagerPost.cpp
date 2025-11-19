@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <vector>
+#include <map>
 #include <cstdlib>
 #include <errno.h>
 #include <netinet/in.h>
@@ -173,46 +174,104 @@ void SocketManager::startCgiDispatch(int fd,
 		// chdir to working dir
 		if (!st.cgi.workingDir.empty()) ::chdir(st.cgi.workingDir.c_str());
 
-		// ---- Build argv ----
-		std::vector<char*> argv;
-		const std::string ext = getFileExtension(st.req.path);
-		const ServerConfig &srv = server;
-		(void)srv; //do we need it?
-		std::map<std::string,std::string>::const_iterator itInterp = route.cgi_extension.find(ext);
-		if (itInterp != route.cgi_extension.end() && !itInterp->second.empty()) {
-			// interpreter + script
-			argv.push_back(const_cast<char*>(itInterp->second.c_str()));
-			argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));
-		} else {
-			// direct exec (shebang)
-			argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));
-		}
-		argv.push_back(NULL);
+        // ---- Build argv (use FS extension, not URL) ----
+        std::vector<char*> argv;
+        {
+                std::string ext;
+                size_t dot = st.cgi.scriptFsPath.rfind('.');
+                if (dot != std::string::npos) ext = st.cgi.scriptFsPath.substr(dot);
 
-		// ---- Build envp (minimal; you can enrich later) ----
-		std::vector<std::string> envStore;
-		std::vector<char*> envp;
-		envStore.push_back("GATEWAY_INTERFACE=CGI/1.1");
-		envStore.push_back(std::string("REQUEST_METHOD=") + st.req.method);
-		envStore.push_back(std::string("SERVER_PROTOCOL=") + st.req.http_version);
-		// CONTENT_LENGTH if body present (decoded body length)
-		if (!st.cgi.inBuf.empty()) {
-			envStore.push_back(std::string("CONTENT_LENGTH=") + to_string(st.cgi.inBuf.size()));
-		}
-		// CONTENT_TYPE (if present)
-		std::map<std::string,std::string>::const_iterator itCT = st.req.headers.find("content-type");
-		if (itCT != st.req.headers.end()) envStore.push_back(std::string("CONTENT_TYPE=") + itCT->second);
-		// SCRIPT_FILENAME / SCRIPT_NAME
-		envStore.push_back(std::string("SCRIPT_FILENAME=") + st.cgi.scriptFsPath);
-		envStore.push_back(std::string("SCRIPT_NAME=") + st.req.path);
-		// (Add QUERY_STRING, SERVER_NAME, SERVER_PORT, REMOTE_ADDR, HTTP_* later)
+                std::map<std::string,std::string>::const_iterator itInterp = route.cgi_extension.find(ext);
+                if (itInterp != route.cgi_extension.end() && !itInterp->second.empty()) {
+                        argv.push_back(const_cast<char*>(itInterp->second.c_str()));          // interpreter
+                        argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // script
+                } else {
+                        argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // direct exec (shebang)
+                }
+                argv.push_back(NULL);
+        }
 
-		for (size_t i = 0; i < envStore.size(); ++i) envp.push_back(const_cast<char*>(envStore[i].c_str()));
-		envp.push_back(NULL);
+        // ---- Build envp (RFC 3875 core) ----
+        std::vector<std::string> env; env.reserve(64);
 
-		// exec
-		::execve(argv[0], &argv[0], &envp[0]);
-		_exit(127); // exec failed
+        // 1) URL parts and addresses
+        std::string urlPath, query; splitPathAndQuery(st.req.path, urlPath, query);
+        std::string remoteAddr, remotePort, serverAddr, serverPort;
+        getSocketAddrs(fd, remoteAddr, remotePort, serverAddr, serverPort);
+
+        // SERVER_NAME/PORT (prefer Host header if present)
+        std::string hostHeader;
+        { std::map<std::string,std::string>::const_iterator itH=st.req.headers.find("host");
+          if (itH!=st.req.headers.end()) hostHeader=itH->second; }
+        std::string serverName = server.server_name.empty() ? serverAddr : server.server_name;
+        std::string serverPortStr = serverPort;
+        if (!hostHeader.empty()) {
+                std::string h = hostHeader;
+                while(!h.empty()&&(h[0]==' '||h[0]=='\t')) h.erase(0,1);
+                while(!h.empty()&&(h[h.size()-1]==' '||h[h.size()-1]=='\t')) h.erase(h.size()-1);
+                size_t c=h.rfind(':');
+                if (c!=std::string::npos) { serverName=h.substr(0,c); serverPortStr=h.substr(c+1); }
+                else serverName=h;
+        }
+
+        // 2) Core vars
+        env.push_back("GATEWAY_INTERFACE=CGI/1.1");
+        env.push_back("REQUEST_METHOD="+st.req.method);
+        env.push_back("SERVER_PROTOCOL="+st.req.http_version);
+        env.push_back("SERVER_SOFTWARE=webserv/0.1");
+        env.push_back("SERVER_NAME="+serverName);
+        env.push_back("SERVER_PORT="+serverPortStr);
+
+        // SCRIPT fields
+        env.push_back("SCRIPT_FILENAME="+st.cgi.scriptFsPath);
+        env.push_back("SCRIPT_NAME="+makeScriptName(route.path, urlPath)); // URL path as seen by client
+
+        // REQUEST_URI & QUERY_STRING
+        env.push_back("REQUEST_URI="+urlPath+(query.empty()?"":"?"+query));
+        env.push_back("QUERY_STRING="+query);
+
+        // Document root (optional)
+        {
+                std::string docroot = !route.root.empty() ? route.root : server.root;
+                if (!docroot.empty()) env.push_back("DOCUMENT_ROOT="+docroot);
+        }
+
+        // Client info
+        if (!remoteAddr.empty()) env.push_back("REMOTE_ADDR="+remoteAddr);
+        if (!remotePort.empty()) env.push_back("REMOTE_PORT="+remotePort);
+
+        // CONTENT_* (use actual stdin size we feed)
+        if (!st.cgi.inBuf.empty()){
+                std::ostringstream oss; oss<<st.cgi.inBuf.size();
+                env.push_back("CONTENT_LENGTH="+oss.str());
+        }
+        { std::map<std::string,std::string>::const_iterator itCT=st.req.headers.find("content-type");
+          if (itCT!=st.req.headers.end()) env.push_back("CONTENT_TYPE="+itCT->second); }
+
+        // HTTP_* for all other headers
+        for (std::map<std::string,std::string>::const_iterator it=st.req.headers.begin();
+             it!=st.req.headers.end(); ++it)
+        {
+                const std::string &k = it->first;
+                if (k=="content-type" || k=="content-length") continue;
+                env.push_back("HTTP_"+httpKeyToCgiVar(k)+"="+it->second);
+        }
+
+        // Honor cgi_pass_env
+        for (size_t i=0;i<route.cgi_pass_env.size();++i){
+                const std::string &key = route.cgi_pass_env[i];
+                const char* v = std::getenv(key.c_str());
+                if (v && *v) env.push_back(key+"="+std::string(v));
+        }
+
+        // Convert to char*[]
+        std::vector<char*> envp; envp.reserve(env.size()+1);
+        for (size_t i=0;i<env.size();++i) envp.push_back(const_cast<char*>(env[i].c_str()));
+        envp.push_back(NULL);
+
+        // exec
+        ::execve(argv[0], &argv[0], &envp[0]);
+        _exit(127); // exec failed
 	}
 
 	// ---- PARENT ----
