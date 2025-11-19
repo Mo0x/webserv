@@ -11,7 +11,13 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <signal.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <vector>
+#include <cstdlib>
 #include <errno.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 static std::string joinPath(const std::string &a, const std::string &b)
 {
@@ -306,3 +312,92 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 		finalizeAndQueue(fd, req, res, false, true);
 	}
 }
+
+static std::string httpKeyToCgiVar(const std::string &k)
+{
+    std::string r; r.reserve(k.size());
+    for (size_t i = 0; i < k.size(); ++i)
+    {
+        unsigned char c = (unsigned char)k[i];
+        if (c == '-') r.push_back('_');
+        else if (c >= 'a' && c <= 'z') r.push_back((char)(c - 'a' + 'A'));
+        else r.push_back((char)c);
+    }
+    return r;
+}
+
+
+static void splitPathAndQuery(const std::string &raw, std::string &urlPath, std::string &query)
+{
+    size_t q = raw.find('?');
+    if (q == std::string::npos) { urlPath = raw; query.clear(); }
+    else { urlPath = raw.substr(0, q); query = raw.substr(q + 1); }
+}
+
+static void splitScriptAndPathInfo(const std::string &urlPath,
+                                   const std::map<std::string,std::string> &cgiExtMap,
+                                   std::string &scriptUrlPath,
+                                   std::string &pathInfo)
+{
+    scriptUrlPath.clear();
+    pathInfo.clear();
+
+    // Walk from end: find last '/' to split components
+    size_t lastSlash = urlPath.rfind('/');
+    std::string lastComp = (lastSlash == std::string::npos) ? urlPath : urlPath.substr(lastSlash + 1);
+
+    // Find a dot in last component
+    size_t dot = lastComp.rfind('.');
+    if (dot != std::string::npos)
+    {
+        std::string ext = lastComp.substr(dot); // includes '.'
+        if (cgiExtMap.find(ext) != cgiExtMap.end())
+        {
+            // Script is up to end of this component
+            scriptUrlPath = urlPath;
+            pathInfo.clear(); // no extra after filename in this heuristic
+            return;
+        }
+    }
+
+    // Fallback: no recognized extension in last component.
+    // We’ll assume the whole path is the script (no PATH_INFO).
+    scriptUrlPath = urlPath;
+    pathInfo.clear();
+}
+
+static void getSocketAddrs(int clientFd,
+                           std::string &remoteAddr, std::string &remotePort,
+                           std::string &serverAddr, std::string &serverPort)
+{
+    remoteAddr.clear(); remotePort.clear();
+    serverAddr.clear(); serverPort.clear();
+
+    sockaddr_storage peer; socklen_t plen = sizeof(peer);
+    if (::getpeername(clientFd, (sockaddr*)&peer, &plen) == 0)
+    {
+        char h[NI_MAXHOST]; char s[NI_MAXSERV];
+        if (::getnameinfo((sockaddr*)&peer, plen, h, sizeof(h), s, sizeof(s),
+                          NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+        { remoteAddr = h; remotePort = s; }
+    }
+
+    sockaddr_storage self; socklen_t slen = sizeof(self);
+    if (::getsockname(clientFd, (sockaddr*)&self, &slen) == 0)
+    {
+        char h[NI_MAXHOST]; char s[NI_MAXSERV];
+        if (::getnameinfo((sockaddr*)&self, slen, h, sizeof(h), s, sizeof(s),
+                          NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+        { serverAddr = h; serverPort = s; }
+    }
+}
+
+static std::string makeScriptName(const std::string &routePrefix,
+                                  const std::string &scriptUrlPath)
+{
+    // Ensure it starts with '/'
+    if (scriptUrlPath.empty()) return "/";
+    if (scriptUrlPath[0] != '/') return "/" + scriptUrlPath;
+    return scriptUrlPath;
+}
+

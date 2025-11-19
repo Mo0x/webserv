@@ -140,41 +140,51 @@ void SocketManager::handleCgiReadable(int pipefd)
 
     ClientState &st = m_clients[clientFd];
     char buf[4096];
-    for (;;) 
+
+    bool gotData = false;
+
+    for (;;)
     {
         ssize_t n = ::read(pipefd, buf, sizeof(buf));
-        if (n > 0) 
+        if (n > 0)
         {
             st.cgi.outBuf.append(buf, static_cast<size_t>(n));
-            drainCgiOutput(clientFd);
-            st.cgi.bytesOutTotal += static_cast<size_t>(n);
-        } 
-        else if (n == 0) 
+            gotData = true;                    // let drainCgiOutput handle counters
+            continue;                          // try to coalesce more bytes this tick
+        }
+        else if (n == 0)
         {
             // EOF on CGI stdout
             ::close(pipefd);
             st.cgi.stdout_r = -1;
             delPollFd(pipefd);
             m_cgiStdoutToClient.erase(it);
+
+            // Final drain to parse headers (if not yet) and finish body/close logic
+            drainCgiOutput(clientFd);
             break;
-        } 
-        else 
+        }
+        else
         {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) break;
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+                break;                          // nothing more right now
+
             // hard error -> close pipe, stop polling
             ::close(pipefd);
             st.cgi.stdout_r = -1;
             delPollFd(pipefd);
             m_cgiStdoutToClient.erase(it);
+
+            // Try to complete with whatever we buffered
+            drainCgiOutput(clientFd);
             break;
         }
     }
 
-    // Defer parsing and HTTP emission to a dedicated step:
-    // We'll add a "drainCgiOutput()" that is called from handleClientRead()
-    // or right after this to parse headers once and start streaming to writeBuffer.
-    // (We'll do that in the next step when you’re ready.)
+    if (gotData)
+        drainCgiOutput(clientFd);               // parse headers / push body / enforce caps
 }
+
 
 void SocketManager::handleCgiPipeError(int pipefd)
 {
@@ -206,107 +216,264 @@ void SocketManager::reapCgiIfDone(ClientState &st)
     if (st.cgi.pid > 0)
     {
         int status = 0;
-        pid_t r = waitpid(st.cgi.pid, &status, WNOHANG);
-        if (r < 0)
-            (void)r;
-            //TODOerror
+        (void) waitpid(st.cgi.pid, &status, WNOHANG);
     }
+}
+
+static void inject_header_lines_before_body(std::string &respBuf,
+                                            const std::vector<std::string> &lines)
+{
+    if (lines.empty()) return;
+    size_t p = respBuf.find("\r\n\r\n");
+    size_t adv = 4;
+    if (p == std::string::npos) {
+        p = respBuf.find("\n\n");
+        adv = 2;
+    }
+    if (p == std::string::npos) {
+        // Fallback: prepend (shouldn't happen with our finalize path)
+        std::string block;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            block += lines[i];
+            if (block.size() < 2 || block.substr(block.size()-2) != "\r\n")
+                block += "\r\n";
+        }
+        respBuf = block + respBuf;
+        return;
+    }
+    std::string block;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        block += lines[i];
+        if (block.size() < 2 || block.substr(block.size()-2) != "\r\n")
+            block += "\r\n";
+    }
+    respBuf.insert(p, block);
 }
 
 bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route)
 {
-    const std::string &buf = st.cgi.outBuf;
-    (void)route;
-    size_t pos = buf.find("\r\n\r\n");
-    size_t delim = (pos != std::string::npos) ? pos + 4 : std::string::npos;
-    if (delim == std::string::npos)
+    const size_t CGI_HEADER_CAP = 32 * 1024;
+
+    // Enforce a cap while waiting for header terminator
+    if (st.cgi.outBuf.size() > CGI_HEADER_CAP &&
+        st.cgi.outBuf.find("\r\n\r\n") == std::string::npos &&
+        st.cgi.outBuf.find("\n\n") == std::string::npos)
     {
-        pos = buf.find("\n\n");
-        if (pos == std::string::npos) return false;
+        // No header terminator within cap — treat as bad gateway
+        killCgiProcess(st, SIGKILL);
+        Response err = makeHtmlError(502, "Bad Gateway",
+                                     "<h1>502 Bad Gateway</h1><p>CGI produced no headers.</p>");
+        finalizeAndQueue(clientFd, st.req, err, false, true);
+        // close pipes
+        if (st.cgi.stdin_w  != -1) { ::close(st.cgi.stdin_w);  st.cgi.stdin_w  = -1; }
+        if (st.cgi.stdout_r != -1) { ::close(st.cgi.stdout_r); st.cgi.stdout_r = -1; }
+        reapCgiIfDone(st);
+        return false;
+    }
+
+    // Find header end
+    size_t pos = st.cgi.outBuf.find("\r\n\r\n");
+    size_t delim = (pos != std::string::npos) ? pos + 4 : std::string::npos;
+    if (delim == std::string::npos) {
+        pos = st.cgi.outBuf.find("\n\n");
+        if (pos == std::string::npos)
+            return false; // need more data
         delim = pos + 2;
     }
 
+    // Parse lines
+    std::map<std::string, std::string> merged; // simple merge for non-duplicate headers
+    std::vector<std::string> setCookieLines;   // keep raw duplicate Set-Cookie
     size_t start = 0;
-    while (start < delim)
-    {
-        size_t eol = buf.find("\r\n", start);
+    while (start < delim) {
+        // find EOL
+        size_t eol = st.cgi.outBuf.find("\r\n", start);
         size_t adv = 2;
-        if (eol == std::string::npos || eol >= delim)
-        {
-            eol = buf.find('\n', start);
-            if (eol == std::string::npos || eol >= delim)
-                break;
+        if (eol == std::string::npos || eol >= delim) {
+            eol = st.cgi.outBuf.find('\n', start);
+            if (eol == std::string::npos || eol >= delim) break;
             adv = 1;
         }
-        if (eol == start)
-        {
-            start += adv;
-            break;
-        }
-        std::string line = buf.substr(start, eol - start);
+        if (eol == start) { start += adv; break; } // blank line
+        std::string line = st.cgi.outBuf.substr(start, eol - start);
         start = eol + adv;
 
+        // split at ':'
         size_t colon = line.find(':');
-        if (colon != std::string::npos)
-        {
-            std::string key = line.substr(0, colon);
-            std::string val = line.substr(colon + 1);
-            while (!val.empty() && (val[0] == ' ' || val[0] == '\t'))
-                val.erase(0,1);
-            key = toLowerCopy(key);
-            st.cgi.cgiHeaders[key] = val;
+        if (colon == std::string::npos) {
+            // ignore invalid header line (tolerant)
+            continue;
         }
-        /*else if (!line.empty())
-        {
-        Could log here
-        }*/
+        std::string key = line.substr(0, colon);
+        std::string val = line.substr(colon + 1);
+        // trim OWS at start of value
+        while (!val.empty() && (val[0] == ' ' || val[0] == '\t')) val.erase(0,1);
+        key = to_lower_copy(key);
+
+        if (key == "set-cookie") {
+            setCookieLines.push_back("Set-Cookie: " + val);
+            continue;
+        }
+        // merge others (comma-join)
+        std::map<std::string,std::string>::iterator it = merged.find(key);
+        if (it == merged.end()) merged[key] = val;
+        else                    it->second += std::string(",") + val;
     }
+
+    // Drop header block from outBuf
     st.cgi.outBuf.erase(0, delim);
 
+    // Determine HTTP status
     int status = 200;
-    std::map<std::string,std::string>::const_iterator it = st.cgi.cgiHeaders.find("status");
-    if (it != st.cgi.cgiHeaders.end())
-    {
-        const std::string &sv = it->second;
+    std::map<std::string,std::string>::const_iterator itS = merged.find("status");
+    if (itS != merged.end()) {
+        const std::string &sv = itS->second;
         int n = 0;
-        if (!sv.empty() && std::isdigit((unsigned char)sv[0]))
-            n = std::atoi(sv.c_str());
-        if (n >= 100 && n <= 599)
-            status = n;
-    }
-    else
-    {
-        if (st.cgi.cgiHeaders.find("location") != st.cgi.cgiHeaders.end())
-            status = 302;
+        if (!sv.empty() && std::isdigit((unsigned char)sv[0])) n = std::atoi(sv.c_str());
+        if (n >= 100 && n <= 599) status = n;
+    } else if (merged.find("location") != merged.end()) {
+        status = 302; // Location without Status → redirect
     }
     st.cgi.cgiStatus = status;
-    
+
+    // Build upstream response headers once
     Response res;
     res.status_code = status;
-    res.status_message = "";
-    for (std::map<std::string, std::string>::const_iterator itR=st.cgi.cgiHeaders.begin(); itR != st.cgi.cgiHeaders.end(); ++itR)
+    res.status_message = ""; // optional
+    // forward selected headers (filter hop-by-hop)
+    for (std::map<std::string,std::string>::const_iterator it = merged.begin();
+         it != merged.end(); ++it)
     {
-        const std::string &k = itR->first;
-        const std::string &v = itR->second;
-        if (k == "status")
+        const std::string &k = it->first;
+        const std::string &v = it->second;
+        if (k == "status") continue;
+        if (k == "connection" || k == "transfer-encoding" ||
+            k == "keep-alive" || k == "proxy-connection" || k == "upgrade")
             continue;
-        if (k == "content-type" || k == "location" || k == "set-cookie" || k == "cache-control")
-            res.headers[k == "content-type" ? "Content-Type" :
-                        k == "location" ? "Location" :
-                        k == "set-cookie" ? "Set-Cookie" : "Cache-Control"] = v;
+
+        if (k == "content-type")      res.headers["Content-Type"]      = v;
+        else if (k == "location")     res.headers["Location"]          = v;
+        else if (k == "content-length") res.headers["Content-Length"]  = v; // allow keep-alive if present
+        else if (k == "cache-control")  res.headers["Cache-Control"]   = v;
+        else if (k == "expires")        res.headers["Expires"]         = v;
+        else if (k == "pragma")         res.headers["Pragma"]          = v;
+        else if (k == "last-modified")  res.headers["Last-Modified"]   = v;
+        else if (k == "etag")           res.headers["ETag"]            = v;
+        else if (k == "vary")           res.headers["Vary"]            = v;
+        else if (k == "content-language") res.headers["Content-Language"] = v;
+        // ignore unknowns or add more as needed
     }
-    finalizeAndQueue(clientFd, st.req, res, true, false);
+
+    // Queue headers. IMPORTANT: pass (body_expected=false, body_fully_consumed=true)
+    // so we DON'T force-close right away; we'll stream the body manually.
+    finalizeAndQueue(clientFd, st.req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
+
+    // Inject duplicate Set-Cookie lines (Response::headers can't hold dupes)
+    if (!setCookieLines.empty()) {
+        inject_header_lines_before_body(st.writeBuffer, setCookieLines);
+        setPollToWrite(clientFd);
+        tryFlushWrite(clientFd, st);
+    }
+
     st.cgi.headersParsed = true;
+    // Cache normalized headers for later checks if you want:
+    st.cgi.cgiHeaders.swap(merged);
     return true;
 }
 
+
 void SocketManager::drainCgiOutput(int clientFd)
 {
-    ClientState &st = m_clients[clientFd];
-    if (st.phase != ClientState::CGI_RUNNING)
-        return;
+    std::map<int, ClientState>::iterator itc = m_clients.find(clientFd);
+    if (itc == m_clients.end()) return;
+    ClientState &st = itc->second;
+
+    if (st.phase != ClientState::CGI_RUNNING && !clientHasPendingWrite(st)) {
+        return; // nothing to do
+    }
+
     const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[clientFd]];
-    const RouteConfig *rt = findMatchingLocation(srv, st.req.path);
+    const RouteConfig  *rt  = findMatchingLocation(srv, st.req.path);
     const size_t timeout_ms = (rt ? rt->cgi_timeout_ms : 0);
-    const size_t max_bytes = (rt ? rt->cgi_max_output_bytes : 0);
+    const size_t max_bytes  = (rt ? rt->cgi_max_output_bytes : 0);
+
+    // Timeout
+    if (timeout_ms > 0 &&
+        (now_ms() - st.cgi.tStartMs) > (unsigned long long)timeout_ms)
+    {
+        killCgiProcess(st, SIGKILL);
+
+        if (!st.cgi.headersParsed) {
+            Response err = makeHtmlError(504, "Gateway Timeout", "<h1>504 Gateway Timeout</h1>");
+            finalizeAndQueue(clientFd, st.req, err, false, true);
+        } else {
+            st.forceCloseAfterWrite = true; // end body by connection close
+        }
+
+        if (st.cgi.stdin_w  != -1) { ::close(st.cgi.stdin_w);  st.cgi.stdin_w  = -1; }
+        if (st.cgi.stdout_r != -1) { ::close(st.cgi.stdout_r); st.cgi.stdout_r = -1; }
+        reapCgiIfDone(st);
+        setPollToWrite(clientFd);
+        tryFlushWrite(clientFd, st);
+        return;
+    }
+
+    // If headers not sent yet, try to parse them
+    if (!st.cgi.headersParsed) {
+        if (rt && !st.cgi.outBuf.empty()) {
+            if (!parseCgiHeaders(st, clientFd, *rt)) {
+                // need more bytes for headers — just wait
+            } else {
+                // After queuing headers, phase is SENDING_RESPONSE.
+                setPollToWrite(clientFd);
+                tryFlushWrite(clientFd, st);
+            }
+        }
+    }
+
+    // Stream body if we have headers and output
+    if (st.cgi.headersParsed && !st.cgi.outBuf.empty()) {
+        // Enforce output cap (on forwarded body)
+        if (max_bytes > 0 &&
+            st.cgi.bytesOutTotal + st.cgi.outBuf.size() > max_bytes)
+        {
+            killCgiProcess(st, SIGKILL);
+            st.forceCloseAfterWrite = true; // end by close after flush
+            if (st.cgi.stdin_w  != -1) { ::close(st.cgi.stdin_w);  st.cgi.stdin_w  = -1; }
+            if (st.cgi.stdout_r != -1) { ::close(st.cgi.stdout_r); st.cgi.stdout_r = -1; }
+            reapCgiIfDone(st);
+            // Optionally truncate to exactly max_bytes; simplest is to stop forwarding more.
+            st.cgi.outBuf.clear();
+        }
+        else
+        {
+            if (st.req.method == "HEAD") {
+                // Drain but DO NOT forward body for HEAD
+                st.cgi.bytesOutTotal += st.cgi.outBuf.size();
+                st.cgi.outBuf.clear();
+            } else {
+                st.writeBuffer.append(st.cgi.outBuf);
+                st.cgi.bytesOutTotal += st.cgi.outBuf.size();
+                st.cgi.outBuf.clear();
+                setPollToWrite(clientFd);
+                tryFlushWrite(clientFd, st);
+            }
+        }
+    }
+
+    // If CGI stdout closed and nothing left to flush → finalize connection choice
+    if (st.cgi.stdout_r == -1 && !clientHasPendingWrite(st)) {
+        // If CGI did not provide Content-Length, we must end body by closing.
+        bool haveCL = false;
+        if (!st.cgi.cgiHeaders.empty()) {
+            std::map<std::string,std::string>::const_iterator itH = st.cgi.cgiHeaders.find("content-length");
+            haveCL = (itH != st.cgi.cgiHeaders.end());
+        }
+        if (!haveCL) {
+            st.forceCloseAfterWrite = true; // signal end-of-body via connection close
+        }
+        reapCgiIfDone(st);
+        setPollToWrite(clientFd);
+        tryFlushWrite(clientFd, st);
+    }
 }

@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/13 18:00:13 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/19 14:59:18 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1046,6 +1046,12 @@ void SocketManager::handleClientRead(int fd)
 		if (!tryFlushWrite(fd, st))
 			return;
 	}
+
+	 if (st.phase == ClientState::CGI_RUNNING)
+    {
+        drainCgiOutput(fd);
+        return;
+    }
 
 	// -------- BODY-FIRST fast path ------------------------------------------
 	// If we're already in READING_BODY, first try to progress with what we have
