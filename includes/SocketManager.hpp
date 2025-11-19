@@ -41,13 +41,14 @@ struct MultipartCtx
 
 struct Cgi
 {
-	pid_t pid;
-	int stdin_w;
-	int stdout_r;
-	bool stdin_closed;
-	std::string inBuf; //decoded request body to feed child
-	std::string outBuf; // bytes read but not yet parsed
-	bool headersParsed;
+        pid_t pid;
+        int stdin_w;
+        int stdout_r;
+        bool stdin_closed;
+        bool stdoutPaused;
+        std::string inBuf; //decoded request body to feed child
+        std::string outBuf; // bytes read but not yet parsed
+        bool headersParsed;
 	int cgiStatus;
 	std::map<std::string, std::string> cgiHeaders;
 	size_t bytesInTotal, bytesOutTotal;
@@ -259,7 +260,9 @@ class SocketManager
 	bool isCgiStdout(int fd) const;
 	bool isCgiStdin (int fd) const;
 	//CGI output path
-	void drainCgiOutput(int clienFd);
+        void drainCgiOutput(int clienFd);
+        void pauseCgiStdoutIfNeeded(int clientFd, ClientState &st);
+        void maybeResumeCgiStdout(int clientFd, ClientState &st);
 	bool parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route);
 
 	void killCgiProcess(ClientState &st, int sig);

@@ -12,12 +12,16 @@
 #include <signal.h> //kill
 #include <sys/wait.h>
 
+static const size_t CGI_HIGH_WATER = 1 << 20;  // 1 MiB
+static const size_t CGI_LOW_WATER  = 1 << 19;  // 512 KiB
+
 Cgi::Cgi() :
-	pid(-1),
-	stdin_w(-1),
-	stdout_r(-1),
-	stdin_closed(-1),
-	headersParsed(false),
+        pid(-1),
+        stdin_w(-1),
+        stdout_r(-1),
+        stdin_closed(-1),
+        stdoutPaused(false),
+        headersParsed(false),
 	cgiStatus(200),
 	bytesInTotal(0),
 	bytesOutTotal(0),
@@ -33,10 +37,11 @@ Cgi::Cgi() :
 
 void Cgi::reset()
 {
-	pid            = -1;
-	stdin_w        = -1;
-	stdout_r       = -1;
-	stdin_closed   = false;
+        pid            = -1;
+        stdin_w        = -1;
+        stdout_r       = -1;
+        stdin_closed   = false;
+        stdoutPaused   = false;
 
 	inBuf.clear();
 	outBuf.clear();
@@ -67,14 +72,36 @@ void SocketManager::modPollEvents(int fd, short setMask, short clearMask)
 
 void SocketManager::delPollFd(int fd)
 {
-	for (size_t i = 0; i < m_pollfds.size(); ++i)
-	{
-		if (m_pollfds[i].fd == fd)
-		{
-			m_pollfds.erase(m_pollfds.begin() + i);
-			break;
-		}
-	}
+        for (size_t i = 0; i < m_pollfds.size(); ++i)
+        {
+                if (m_pollfds[i].fd == fd)
+                {
+                        m_pollfds.erase(m_pollfds.begin() + i);
+                        break;
+                }
+        }
+}
+
+void SocketManager::pauseCgiStdoutIfNeeded(int clientFd, ClientState &st)
+{
+        (void)clientFd;
+        if (st.cgi.stdout_r == -1 || st.cgi.stdoutPaused)
+                return;
+        if (st.writeBuffer.size() < CGI_HIGH_WATER)
+                return;
+        delPollFd(st.cgi.stdout_r);
+        st.cgi.stdoutPaused = true;
+}
+
+void SocketManager::maybeResumeCgiStdout(int clientFd, ClientState &st)
+{
+        (void)clientFd;
+        if (st.cgi.stdout_r == -1 || !st.cgi.stdoutPaused)
+                return;
+        if (st.writeBuffer.size() > CGI_LOW_WATER)
+                return;
+        addPollFd(st.cgi.stdout_r, POLLIN);
+        st.cgi.stdoutPaused = false;
 }
 
 bool SocketManager::isCgiStdout(int fd) const
@@ -538,6 +565,7 @@ void SocketManager::drainCgiOutput(int clientFd)
         else
         {
             st.writeBuffer.append(st.cgi.outBuf);
+            pauseCgiStdoutIfNeeded(clientFd, st);
             st.cgi.bytesOutTotal += st.cgi.outBuf.size();
             st.cgi.outBuf.clear();
             setPollToWrite(clientFd);

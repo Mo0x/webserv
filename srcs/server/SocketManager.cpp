@@ -1362,16 +1362,18 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 			handleClientDisconnect(fd);
 			return false;
 		}
-		if (n == 0)
-		{
-			setPollToWrite(fd);
-			return false;
-		}
-		st.writeBuffer.erase(0, static_cast<size_t>(n));
-	}
+                if (n == 0)
+                {
+                        setPollToWrite(fd);
+                        return false;
+                }
+                st.writeBuffer.erase(0, static_cast<size_t>(n));
+                if (st.phase == ClientState::CGI_RUNNING)
+                        maybeResumeCgiStdout(fd, st);
+        }
 
-	clearPollout(fd);
-	st.writeBuffer.clear();
+        clearPollout(fd);
+        st.writeBuffer.clear();
 
 	if (st.forceCloseAfterWrite || st.closing)
 	{
