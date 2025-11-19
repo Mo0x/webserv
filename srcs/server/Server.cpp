@@ -6,8 +6,13 @@
 #include "request_response_struct.hpp"
 #include "Logger.hpp"
 #include "file_utils.hpp"
+#include "utils.hpp"
 #include <sys/stat.h>
 #include <string>
+#include <dirent.h>
+#include <vector>
+#include <algorithm>
+#include <sstream>
 
 // Constructor: store the config and initialize your socket manager
 Server::Server(const ServerConfig& config)
@@ -106,7 +111,15 @@ void Server::run()
         if (!loc->index.empty()) {
             fullPath += "/" + loc->index;
         } else if (loc->autoindex) {
-            // call a helper generateDirectoryListing(fullPath)
+            // generate directory listing using shared helper and return as HTML
+            std::string body = generateAutoIndexPage(fullPath, req.path);
+            Response res200;
+            res200.setStatus(200);
+            res200.addHeader("Content-Type", "text/html; charset=utf-8");
+            res200.setBody(body);
+            _sockMgr.send(clientFd, res200.toString());
+            _sockMgr.close(clientFd);
+            continue;
         } else {
             Response res(403, "<h1>403 Forbidden</h1>");
             _sockMgr.send(clientFd, res.toString());
@@ -133,6 +146,8 @@ void Server::run()
     _sockMgr.close(clientFd);
     }
 }
+
+// Use shared `generateAutoIndexPage` from utils.cpp instead of a duplicate implementation.
 
 // Copy‐ctor
 Server::Server(const Server& src)
