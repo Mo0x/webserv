@@ -253,6 +253,7 @@ static void inject_header_lines_before_body(std::string &respBuf,
 bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route)
 {
     const size_t CGI_HEADER_CAP = 32 * 1024;
+    (void)route;
 
     // Enforce a cap while waiting for header terminator
     if (st.cgi.outBuf.size() > CGI_HEADER_CAP &&
@@ -308,7 +309,7 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
         std::string val = line.substr(colon + 1);
         // trim OWS at start of value
         while (!val.empty() && (val[0] == ' ' || val[0] == '\t')) val.erase(0,1);
-        key = to_lower_copy(key);
+        key = toLowerCopy(key);
 
         if (key == "set-cookie") {
             setCookieLines.push_back("Set-Cookie: " + val);
