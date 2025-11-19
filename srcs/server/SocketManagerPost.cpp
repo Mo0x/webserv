@@ -19,6 +19,8 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/stat.h>
+#include <limits.h>
 
 static std::string httpKeyToCgiVar(const std::string &k)
 {
@@ -139,6 +141,16 @@ static std::string stripLocationPrefix(const std::string &url, const std::string
 	return s;
 }
 
+static bool fileHasShebang(const std::string &path)
+{
+	std::ifstream ifs(path.c_str(), std::ios::in | std::ios::binary);
+	if (!ifs)
+		return false;
+	char magic[2];
+	ifs.read(magic, 2);
+	return ifs.gcount() == 2 && magic[0] == '#' && magic[1] == '!';
+}
+
 //create a name, and avoid collision (using timestamp from epoch)
 static std::string makeUploadFileName(const std::string &hint)
 {
@@ -205,6 +217,21 @@ void SocketManager::startCgiDispatch(int fd,
 	st.cgi.reset();                      // if you added reset(); else set fields like in your ctor
 	st.cgi.workingDir    = workingDir;
 	st.cgi.scriptFsPath  = scriptFsPath;
+
+	std::string interpreterPath;
+	bool hasInterpreter = false;
+	{
+		std::string ext;
+		size_t dot = st.cgi.scriptFsPath.rfind('.');
+		if (dot != std::string::npos)
+			ext = st.cgi.scriptFsPath.substr(dot);
+		std::map<std::string,std::string>::const_iterator itInterp = route.cgi_extension.find(ext);
+		if (itInterp != route.cgi_extension.end() && !itInterp->second.empty())
+		{
+			hasInterpreter = true;
+			interpreterPath = itInterp->second;
+		}
+	}
 	st.cgi.inBuf.swap(st.bodyBuffer);    // move decoded request body to CGI stdin buffer
 	st.cgi.tStartMs      = now_ms();
 	st.cgi.stdin_w       = -1;
@@ -224,6 +251,66 @@ void SocketManager::startCgiDispatch(int fd,
 
 	// Flip outer phase — the event loop will later spawn/drive the CGI
 	setPhase(fd, st, ClientState::CGI_RUNNING, "startCgiDispatch");
+
+	// Resolve the script path securely before spawning
+	char realBuf[PATH_MAX];
+	if (!::realpath(st.cgi.scriptFsPath.c_str(), realBuf))
+	{
+		Response res;
+		if (errno == ENOENT || errno == ENOTDIR)
+			res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1><p>CGI script not found.</p>");
+		else
+			res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>Failed to resolve CGI script.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	std::string absScript(realBuf);
+	if (!isPathSafe(workingDir, absScript))
+	{
+		Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1><p>CGI script outside root.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	struct stat sb;
+	if (::stat(absScript.c_str(), &sb) != 0)
+	{
+		Response res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1><p>CGI script missing.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	if (!S_ISREG(sb.st_mode))
+	{
+		Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script is not a regular file.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	if (::access(absScript.c_str(), R_OK) != 0)
+	{
+		Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not readable.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	if (hasInterpreter)
+	{
+		struct stat ist;
+		if (::stat(interpreterPath.c_str(), &ist) != 0 || !S_ISREG(ist.st_mode) || ::access(interpreterPath.c_str(), X_OK) != 0)
+		{
+			Response res = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>Interpreter not found or not executable.</p>");
+			finalizeAndQueue(fd, st.req, res, false, true);
+			return;
+		}
+	}
+	else
+	{
+		bool canExec = (::access(absScript.c_str(), X_OK) == 0);
+		if (!canExec && !fileHasShebang(absScript))
+		{
+			Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not executable.</p>");
+			finalizeAndQueue(fd, st.req, res, false, true);
+			return;
+		}
+	}
+	st.cgi.scriptFsPath = absScript;
 
 	// ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
 	int inPipe[2], outPipe[2];
@@ -265,13 +352,8 @@ void SocketManager::startCgiDispatch(int fd,
         // ---- Build argv (use FS extension, not URL) ----
         std::vector<char*> argv;
         {
-                std::string ext;
-                size_t dot = st.cgi.scriptFsPath.rfind('.');
-                if (dot != std::string::npos) ext = st.cgi.scriptFsPath.substr(dot);
-
-                std::map<std::string,std::string>::const_iterator itInterp = route.cgi_extension.find(ext);
-                if (itInterp != route.cgi_extension.end() && !itInterp->second.empty()) {
-                        argv.push_back(const_cast<char*>(itInterp->second.c_str()));          // interpreter
+                if (hasInterpreter) {
+                        argv.push_back(const_cast<char*>(interpreterPath.c_str()));          // interpreter
                         argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // script
                 } else {
                         argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // direct exec (shebang)
