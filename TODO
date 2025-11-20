@@ -1,0 +1,4 @@
+1/ replace de define LOG() by std::cerr call log style
+2/ CGI
+3/ delete
+4/ autoindex finish

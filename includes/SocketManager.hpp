@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/10 11:31:26 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/18 14:11:46 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,6 +26,7 @@
 #include <string>
 #include <set>
 
+
 struct MultipartCtx
 {
 	FileUploadHandler          file;
@@ -37,6 +38,27 @@ struct MultipartCtx
 	bool                       writingFile;
 	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), fileFd(-1), writingFile(false) {}
 };
+
+struct Cgi
+{
+        pid_t pid;
+        int stdin_w;
+        int stdout_r;
+        bool stdin_closed;
+        bool stdoutPaused;
+        std::string inBuf; //decoded request body to feed child
+        std::string outBuf; // bytes read but not yet parsed
+        bool headersParsed;
+	int cgiStatus;
+	std::map<std::string, std::string> cgiHeaders;
+	size_t bytesInTotal, bytesOutTotal;
+	unsigned long long tStartMs;
+	std::string scriptFsPath;
+	std::string workingDir;
+
+	Cgi();
+	void reset();
+};
 struct ClientState
 {
 	enum Phase
@@ -44,6 +66,7 @@ struct ClientState
 		READING_HEADERS,
 		READING_BODY,
 		READY_TO_DISPATCH,
+		CGI_RUNNING,
 		SENDING_RESPONSE,
 		CLOSED
 	};
@@ -93,36 +116,12 @@ struct ClientState
 	int multipartStatusCode;
 	std::string multipartStatusTitle;
 	std::string multipartStatusBody;
+	//CGI
+	struct Cgi cgi;
 
-	bool mpDone() const { return mp.isDone(); }
+	bool mpDone() const;
 
-	ClientState()
-		: phase(READING_HEADERS),
-		  recvBuffer(),
-		  req(),
-		  isChunked(false),
-		  contentLength(0),
-		  maxBodyAllowed(0),
-		  bodyBuffer(),
-		  chunkDec(),
-		  writeBuffer(),
-		  forceCloseAfterWrite(false),
-		  closing(false),
-		  isMultipart(false),
-		  multipartInit(false),
-		  multipartBoundary(),
-		  mpState(MP_START),
-		  mp(),
-		  mpCtx(),
-		  debugMultipartBytes(0),
-		  uploadDir(),
-		  maxFilePerPart(0),
-		  multipartError(false),
-		  multipartStatusCode(0),
-		  multipartStatusTitle(),
-		  multipartStatusBody()
-	{
-	}
+	ClientState();
 };
 
 class SocketManager
@@ -146,6 +145,9 @@ class SocketManager
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
 	std::map<int, bool> m_isChunked;
+	// cgi map
+	std::map<int,int> m_cgiStdoutToClient;
+	std::map<int,int> m_cgiStdinToClient;
 
 	public:
 	SocketManager(const Config &config);
@@ -248,8 +250,35 @@ class SocketManager
 	std::string extractBoundary(const std::string& ct) const;
 	bool  routeAllowsUpload(const ClientState& st) const;
 	std::string generateUploadName(size_t index) const;
-	void  queue201UploadList(int fd, const std::vector<std::string>& names);	
+	void  queue201UploadList(int fd, const std::vector<std::string>& names);	// maybe delete we never implement
 
+	//cgi
+	void startCgiDispatch(int fd,
+						ClientState &st,
+						const ServerConfig &server,
+						const RouteConfig &route);
+	bool tryCgiDispatchNow(int fd,
+						ClientState &st,
+						const ServerConfig &srv,
+						const RouteConfig &route);
+	void addPollFd(int fd, short events);
+	void modPollEvents(int fd, short setMask, short clearMask);
+	void delPollFd(int fd);
+	bool isCgiStdout(int fd) const;
+	bool isCgiStdin (int fd) const;
+	//CGI output path
+        void drainCgiOutput(int clienFd);
+        void pauseCgiStdoutIfNeeded(int clientFd, ClientState &st);
+        void maybeResumeCgiStdout(int clientFd, ClientState &st);
+	bool parseCgiHeaders(ClientState &st, int clientFd, const RouteConfig &route);
+
+	void killCgiProcess(ClientState &st, int sig);
+	void reapCgiIfDone(ClientState &st); // non-blockling waitpid;
+	
+	void handleCgiWritable(int pipefd);
+	void handleCgiReadable(int pipefd);
+	void handleCgiPipeError(int pipefd);
+	
 };
 
 #endif

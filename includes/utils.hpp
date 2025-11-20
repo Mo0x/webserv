@@ -4,6 +4,7 @@
 #include <iostream>
 #include "Config.hpp"
 #include "request_reponse_struct.hpp"
+#include <sys/time.h>
 
 std::string to_string(size_t val);
 const RouteConfig *findMatchingLocation(const ServerConfig &server, const std::string &path);
@@ -20,5 +21,8 @@ void normalizeHeaderKeys(std::map<std::string, std::string> &hdrs);
 std::string toLowerCopy(const std::string &str);
 std::string trimCopy(const std::string &s);
 bool std_to_hex(const std::string &hex_part, size_t &ret);
+std::string getFileExtension(const std::string &path);
+std::string joinPaths(const std::string &a, const std::string &b);
+unsigned long long now_ms();
 
 #endif

@@ -16,8 +16,11 @@ struct RouteConfig
     std::string index;
     std::string upload_path;
     std::string redirect;
-    std::string cgi_extension;
+    std::map<std::string, std::string> cgi_extension; // first field = extension second = interprester
     std::string cgi_path;
+    size_t      cgi_timeout_ms;
+    size_t      cgi_max_output_bytes;
+    std::vector<std::string> cgi_pass_env;
     
     RouteConfig();
 };
