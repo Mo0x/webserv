@@ -313,8 +313,7 @@ SocketManager::SocketManager()
 
 SocketManager::SocketManager(const SocketManager &src)
 	: m_pollfds(src.m_pollfds),
-	  m_serverFds(src.m_serverFds),
-	  m_clientBuffers(src.m_clientBuffers)
+	  m_serverFds(src.m_serverFds)
 {
 	// Do NOT copy m_servers — ServerSocket is non-copyable
 }
@@ -325,7 +324,6 @@ SocketManager &SocketManager::operator=(const SocketManager &src)
 	{
 		m_pollfds = src.m_pollfds;
 		m_serverFds = src.m_serverFds;
-		m_clientBuffers = src.m_clientBuffers;
 		// Do NOT copy m_servers
 	}
 	return *this;
@@ -445,13 +443,6 @@ void SocketManager::handleNewConnection(int listen_fd)
 	pdf.revents = 0;
 	m_pollfds.push_back(pdf);
 
-	// --- Legacy per-fd maps (keep them until full migration)
-	m_clientBuffers[client_fd]      = "";
-	m_headersDone[client_fd]        = false;
-	m_expectedContentLen[client_fd] = 0;
-	m_allowedMaxBody[client_fd]     = 0;
-	m_isChunked[client_fd]          = false;
-
 	// --- Map this client to the correct server index (reuse your existing way)
 	for (size_t i = 0; i < m_servers.size(); ++i)
 	{
@@ -552,7 +543,7 @@ void SocketManager::queueErrorAndClose(int fd, int status,
 		finalizeAndQueue(fd, res);
 }
 
-//new helper of readIntoClientBuffer that takes ClientState
+// Nonblocking read into the ClientState recvBuffer
 bool SocketManager::readIntoBuffer(int fd, ClientState &st)
 {
 	char buffer[4096];
@@ -571,27 +562,6 @@ bool SocketManager::readIntoBuffer(int fd, ClientState &st)
 	return true;
 }
 
-
-bool SocketManager::readIntoClientBuffer(int fd)
-{
-	// ---- read from socket (nonblocking-safe) --------------------------------
-	char buffer[1024];
-	int bytes = ::recv(fd, buffer, sizeof(buffer), 0);
-	if (bytes == 0)
-	{
-		handleClientDisconnect(fd);
-		return false;
-	}
-	if (bytes < 0)
-	{
-		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-			return true;  // no new data yet, but keep existing buffered bytes
-		handleClientDisconnect(fd);
-		return false;
-	}
-	m_clientBuffers[fd].append(buffer, bytes);
-	return true;
-}
 
 void SocketManager::dispatchRequest(int fd, const Request &req,
 									const ServerConfig &server,
@@ -704,21 +674,13 @@ void SocketManager::dispatchRequest(int fd, const Request &req,
 	finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
 }
 
-void SocketManager::resetRequestState(int fd)
-{
-	m_headersDone[fd] = false;
-	m_expectedContentLen[fd] = 0;
-	m_allowedMaxBody[fd] = 0;
-	m_isChunked[fd] = false;
-}
-
 /*----------------------------HERE IS THE NEW HANDLECLIENTTEAD v3 refactorised ------------------------------------------------
 	Inside handleClientRead(fd) now:
 	Step 0. If we already have something queued to write to that client (when st.writeBuffer is not empty), we bail early and DO NOT read more.
 	→ So we are "1 request at a time per connection" and we don't pipeline.
-	Step 1. readIntoClientBuffer(fd)
-	nonblocking recv into m_clientBuffers[fd].
-	handles disconnect (0 bytes or fatal error) by calling handleClientDisconnect(fd).
+	Step 1. readIntoBuffer(fd)
+	nonblocking recv into st.recvBuffer on the ClientState.
+	Handles disconnect (0 bytes or fatal error) by calling handleClientDisconnect(fd).
 
 	Step 2. Header handling
 	locateHeaders: find \r\n\r\n. Also enforces an in-progress header size cap (32KB) and if you exceed it before headers complete, you immediately queue 431 + close.
@@ -748,11 +710,11 @@ void SocketManager::resetRequestState(int fd)
 
 	Step 4. First-time header-side policy for this FD
 	processFirstTimeHeaders:
-	Runs only once per new request (gated by m_headersDone[fd]).
+	Runs only once per new request.
 	figures out which location/RouteConfig we're under (via findMatchingLocation), and records:
-	per-route/per-server max_body_size into m_allowedMaxBody[fd]
-	expected body length in m_expectedContentLen[fd]
-	whether request is chunked in m_isChunked[fd]
+	per-route/per-server max_body_size into ClientState::maxBodyAllowed
+	expected body length into ClientState::contentLength
+	whether request is chunked in ClientState::isChunked
 	Enforces 405 Method Not Allowed EARLY if method not in route’s allowed list.
 	-> Builds a 405 with an Allow: header, queues it, stops.
 	Enforces 411 Length Required:
@@ -763,7 +725,7 @@ void SocketManager::resetRequestState(int fd)
 	Step 5. Body readiness
 	ensureBodyReady:
 	figures out how many body bytes we already have after the header.
-	live-stream check against m_allowedMaxBody[fd] → if exceeded, send 413 and close.
+	live-stream check against maxBodyAllowed → if exceeded, send 413 and close.
 	if we advertised a Content-Length, makes sure we didn't already read more than that → 400 and close.
 	waits until we actually received the full body:
 	if CL given: require full CL bytes in buffer.
@@ -782,8 +744,7 @@ void SocketManager::resetRequestState(int fd)
 	Calls finalizeAndQueue() with flags like body_expected/body_fully_consumed.
 
 	Step 7. After dispatch
-	We slice the processed request out of m_clientBuffers[fd] using erase(0, requestEnd) so leftover bytes remain in buffer (→ this is how we start to support multiple requests on the same TCP connection, sequentially).
-	Then resetRequestState(fd) resets m_headersDone, body tracking, etc.
+	Response is queued; when write completes we clear ClientState buffers and return to READING_HEADERS for keep-alive.
 	So: this is now a full HTTP/1.1-ish state machine with:
 	header caps + per-line caps
 	CL overflow safety
@@ -1193,7 +1154,6 @@ void SocketManager::handleClientDisconnect(int fd)
 {
 	std::cout << "Disconnecting fd " << fd << std::endl;
 	::close(fd);
-	m_clientBuffers.erase(fd);
 	m_clientToServerIndex.erase(fd);
 	for (size_t i = 0; i < m_pollfds.size(); ++i)
 	{
@@ -1204,10 +1164,6 @@ void SocketManager::handleClientDisconnect(int fd)
 		}
 	}
 	//old legacy code, will go away now that that we do per ClientState
-	m_headersDone.erase(fd);
-	m_expectedContentLen.erase(fd);
-	m_allowedMaxBody.erase(fd);
-	m_isChunked.erase(fd);
 
 	std::map<int, ClientState>::iterator it = m_clients.find(fd);
 	if (it != m_clients.end())
@@ -1390,7 +1346,6 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 
 	st.forceCloseAfterWrite = false;
 	st.closing = false;
-	resetRequestState(fd);
 	st.req = Request();
 		st.bodyBuffer.clear();
 		st.isChunked = false;

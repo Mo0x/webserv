@@ -126,25 +126,18 @@ struct ClientState
 
 class SocketManager
 {
-	private:
+private:
 	std::vector<ServerSocket*>	m_servers;
 	std::vector<struct pollfd>	m_pollfds;
 	std::set<int>				m_serverFds;     // to distinguish server vs client
-    std::map<int, std::string> 	m_clientBuffers; // client fd → partial data
 	std::map<int, ClientState>	m_clients;
 	std::vector<ServerConfig>	m_serversConfig;
 	Config						m_config;
 
 	std::map<int, size_t>		m_clientToServerIndex;
 
-	//for max body size:
-	std::map<int, bool>			m_headersDone;
-	std::map<int, size_t>		m_expectedContentLen;
-	std::map<int, size_t>		m_allowedMaxBody;
-
 	SocketManager &operator=(const SocketManager &src);
 	SocketManager(const SocketManager &src);
-	std::map<int, bool> m_isChunked;
 	// cgi map
 	std::map<int,int> m_cgiStdoutToClient;
 	std::map<int,int> m_cgiStdinToClient;
@@ -180,7 +173,6 @@ class SocketManager
 	private:
 
 	bool readIntoBuffer(int fd, ClientState &st);
-	bool readIntoClientBuffer(int fd); // probably to delete once the new handleClientRead works
 
         // Legacy header/body pipeline helpers (preserved under srcs/legacy/).
         bool locateHeaders(int fd, size_t &hdrEnd);
@@ -199,7 +191,6 @@ class SocketManager
 	void dispatchRequest(int fd, const Request &req,
 							const ServerConfig &server,
 							const std::string &methodUpper);
-	void resetRequestState(int fd);
 	bool clientHasPendingWrite(const ClientState &st) const;
 
 	bool tryParseHeaders(int fd, ClientState &st);
