@@ -1,4 +1,3 @@
-++ /home/whatamidoing/Desktop/webswork/srcs/server/SocketManagerDelete.cpp
 #include "SocketManager.hpp"
 #include "request_reponse_struct.hpp"
 #include "file_utils.hpp"
@@ -27,11 +26,11 @@ void SocketManager::handleDelete(int fd,
     // Check method allowed if we have a route
     if (r)
     {
-        if (!isMethodAllowedForRoute("DELETE", r->allowedMethods))
+        if (!isMethodAllowedForRoute("DELETE", r->allowed_methods))
         {
             Response res = makeHtmlError(405, "Method Not Allowed", "<h1>405 Method Not Allowed</h1>");
             // build Allow header from route
-            res.headers["Allow"] = joinAllowedMethods(normalizeAllowedForAllowHeader(r->allowedMethods));
+            res.headers["Allow"] = joinAllowedMethods(normalizeAllowedForAllowHeader(r->allowed_methods));
             finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
             return;
         }
