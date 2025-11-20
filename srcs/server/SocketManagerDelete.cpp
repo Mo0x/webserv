@@ -4,11 +4,10 @@
 
 #include "SocketManager.hpp"
 #include "file_utils.hpp"
-#include "request_reponse_struct.hpp"
+#include "request_response_struct.hpp"
 #include "utils.hpp"
 
-// Implement DELETE logic in its own translation unit so it can be wired later.
-// Behavior:
+// DELETE-specific helpers factored out of SocketManager.cpp for clarity.
 // - reuse routing to compute effective root + stripped path
 // - check method allowed on route
 // - path traversal protection via isPathSafe

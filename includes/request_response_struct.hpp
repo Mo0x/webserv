@@ -1,5 +1,5 @@
-#ifndef REQUEST_REPONSE_STRUCT_HPP
-#define REQUEST_REPONSE_STRUCT_HPP
+#ifndef REQUEST_RESPONSE_STRUCT_HPP
+#define REQUEST_RESPONSE_STRUCT_HPP
 
 #include <map>
 #include <string>

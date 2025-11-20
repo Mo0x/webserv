@@ -3,7 +3,9 @@
 #include "Chunked.hpp"
 #include "Config.hpp"
 #include "SocketManager.hpp"
-#include "request_reponse_struct.hpp"
+#include "request_response_struct.hpp"
+
+// Header parsing / HTTP request normalization helpers factored out separately.
 
 // tryPraseHeader(fd, st)
 /* New helper replacing processFirstTimeHeaders(), locateHeaders, enforceHeaderLimits, parseAndValidateRequest it does the following:

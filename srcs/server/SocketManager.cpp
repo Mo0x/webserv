@@ -25,7 +25,7 @@
 
 #include "SocketManager.hpp"
 #include "file_utils.hpp"
-#include "request_reponse_struct.hpp"
+#include "request_response_struct.hpp"
 #include "utils.hpp"
 
 #ifndef LOG

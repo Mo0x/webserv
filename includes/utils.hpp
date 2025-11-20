@@ -8,7 +8,7 @@
 #include <iostream>
 
 #include "Config.hpp"
-#include "request_reponse_struct.hpp"
+#include "request_response_struct.hpp"
 
 std::string to_string(size_t val);
 const RouteConfig *findMatchingLocation(const ServerConfig &server, const std::string &path);

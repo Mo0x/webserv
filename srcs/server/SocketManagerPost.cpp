@@ -18,10 +18,12 @@
 
 #include "Chunked.hpp"
 #include "Config.hpp"
+#include "request_response_struct.hpp"
 #include "SocketManager.hpp"
 #include "file_utils.hpp"
-#include "request_reponse_struct.hpp"
 #include "utils.hpp"
+
+// POST/CGI dispatch helpers separated from the main SocketManager loop.
 
 static std::string httpKeyToCgiVar(const std::string &k)
 {
@@ -546,5 +548,3 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 		finalizeAndQueue(fd, req, res, false, true);
 	}
 }
-
-
