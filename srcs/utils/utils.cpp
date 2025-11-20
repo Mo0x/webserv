@@ -126,10 +126,12 @@ std::string generateAutoIndexPage(const std::string &dirPath, const std::string 
 		std::string name = entry->d_name;
 		if (name == "." || name == "..") // <---- My choice to forbid ".." normally not a problem because path validation is clean but could lead to problem with weird dirs/config I.E directory traversing to a "admin directory"
 			continue ;
-		html << "<li> <a href=\"" << uriPath;
+		html << "<li><a href=\"";
+		// ensure links are absolute to the current directory path
+		html << uriPath;
 		if (uriPath[uriPath.size() - 1] != '/') 
 			html << "/";
-		html << name << "\">" << name << "</a> </li";
+		html << name << "\">" << name << "</a></li>";
 	}
 	closedir(dir);
 	html << "</ul></body></html>";
