@@ -32,9 +32,6 @@ class Server
 	explicit Server(const ServerConfig& config);
 	Server &operator=(const Server &src);
 	~Server();
-
-	 // Start accepting connections & dispatch requests
-	 void run();
 };
 
 #endif
