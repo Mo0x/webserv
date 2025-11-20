@@ -204,6 +204,7 @@ private:
 	bool setupBodyFramingAndLimits(int fd, ClientState &st);
 	void finalizeHeaderPhaseTransition (int fd, ClientState &st, size_t hdrEndPos);
 	bool tryReadBody(int fd, ClientState &st);
+	void queueErrorAndClose(int fd, int status, const std::string &title, const std::string &html);
 
 	// Dispatch to handlers
 	void dispatchRequest(int fd, const Request &req,
