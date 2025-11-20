@@ -21,16 +21,13 @@
 
 #include "Chunked.hpp"
 #include "Config.hpp"
-#include "FileUploadHandler.hpp"
 #include "MultipartStreamParser.hpp"
 #include "ServerSocket.hpp"
-#include "request_parser.hpp"
 #include "utils.hpp"
 
 // -------------------------- Multipart context -------------------------------
 struct MultipartCtx
 {
-	FileUploadHandler          file;
 	std::vector<std::string>   savedNames;
 	std::map<std::string,std::string> fields;
 	std::string                fieldName, safeFilename, safeFilenameRaw, fieldBuffer, pendingWrite, currentFilePath;

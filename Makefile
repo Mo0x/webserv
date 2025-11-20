@@ -19,7 +19,6 @@ SRCS = \
 	./srcs/server/Response.cpp \
 	./srcs/server/MultipartStreamParser.cpp \
 	./srcs/utils/file_utils.cpp \
-        ./srcs/utils/request_parser.cpp \
         ./srcs/utils/utils.cpp
 
 OBJS = $(SRCS:.cpp=.o)
