@@ -1,5 +1,6 @@
-#include "request_reponse_struct.hpp"
 #include <sstream>
+
+#include "request_reponse_struct.hpp"
 
 std::string build_http_response(const Response& res)
 {

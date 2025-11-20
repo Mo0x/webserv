@@ -1,8 +1,9 @@
-#include "SocketManager.hpp"
-#include "Config.hpp"
-#include "request_reponse_struct.hpp"
-#include "Chunked.hpp"
 #include <iostream>
+
+#include "Chunked.hpp"
+#include "Config.hpp"
+#include "SocketManager.hpp"
+#include "request_reponse_struct.hpp"
 
 // tryPraseHeader(fd, st)
 /* New helper replacing processFirstTimeHeaders(), locateHeaders, enforceHeaderLimits, parseAndValidateRequest it does the following:

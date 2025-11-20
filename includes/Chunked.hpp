@@ -1,5 +1,6 @@
 #ifndef CHUNKED_HPP
 #define CHUNKED_HPP
+
 #include <string>
 
 class ChunkedDecoder

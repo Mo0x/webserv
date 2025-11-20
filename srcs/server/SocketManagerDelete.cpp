@@ -1,10 +1,11 @@
-#include "SocketManager.hpp"
-#include "request_reponse_struct.hpp"
-#include "file_utils.hpp"
-#include "utils.hpp"
-#include <unistd.h>
 #include <cerrno>
 #include <cstring>
+#include <unistd.h>
+
+#include "SocketManager.hpp"
+#include "file_utils.hpp"
+#include "request_reponse_struct.hpp"
+#include "utils.hpp"
 
 // Implement DELETE logic in its own translation unit so it can be wired later.
 // Behavior:

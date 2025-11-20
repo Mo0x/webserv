@@ -1,9 +1,10 @@
-#include "ConfigLexer.hpp"
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <cctype>
 #include <iostream>
+
+#include "ConfigLexer.hpp"
 
 ConfigLexer::ConfigLexer(const std::string& filename)
     : _current(0), _line(1)

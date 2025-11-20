@@ -1,6 +1,7 @@
+#include <iostream>
+
 #include "Chunked.hpp"
 #include "utils.hpp"
-#include <iostream>
 
 ChunkedDecoder::ChunkedDecoder() :
 	m_state(S_SIZE), 

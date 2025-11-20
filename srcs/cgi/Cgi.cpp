@@ -1,16 +1,17 @@
-#include "SocketManager.hpp"
-#include "Config.hpp"
-#include <sys/time.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sstream> // for std::ostringstream
-#include <cstdlib>
-#include <cerrno>
-#include <cstring> //for std::strerror
 #include <cctype>
+#include <cerrno>
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
 #include <iostream>
-#include <signal.h> //kill
+#include <sstream>
+#include <sys/time.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+#include "Config.hpp"
+#include "SocketManager.hpp"
 
 static const size_t CGI_HIGH_WATER = 1 << 20;  // 1 MiB
 static const size_t CGI_LOW_WATER  = 1 << 19;  // 512 KiB

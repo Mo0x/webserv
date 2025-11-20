@@ -1,7 +1,8 @@
-#include "utils.hpp"
-#include <sstream>
 #include <dirent.h>
+#include <sstream>
+
 #include "SocketManager.hpp"
+#include "utils.hpp"
 
 std::string to_string(size_t val)
 {

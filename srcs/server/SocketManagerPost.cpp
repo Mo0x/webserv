@@ -1,26 +1,27 @@
-#include "SocketManager.hpp"
+#include <arpa/inet.h>
+#include <csignal>
+#include <cstdlib>
+#include <cerrno>
+#include <fcntl.h>
+#include <fstream>
+#include <iostream>
+#include <limits.h>
+#include <map>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sstream>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <vector>
+
+#include "Chunked.hpp"
 #include "Config.hpp"
+#include "SocketManager.hpp"
+#include "file_utils.hpp"
 #include "request_reponse_struct.hpp"
 #include "utils.hpp"
-#include "file_utils.hpp"
-#include "Chunked.hpp"
-#include <sstream>
-#include <iostream>
-#include <fstream>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <signal.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <vector>
-#include <map>
-#include <cstdlib>
-#include <errno.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <sys/stat.h>
-#include <limits.h>
 
 static std::string httpKeyToCgiVar(const std::string &k)
 {
@@ -545,6 +546,5 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 		finalizeAndQueue(fd, req, res, false, true);
 	}
 }
-
 
 

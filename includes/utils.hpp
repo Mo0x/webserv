@@ -1,10 +1,14 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+#include <map>
+#include <set>
+#include <string>
+#include <sys/time.h>
 #include <iostream>
+
 #include "Config.hpp"
 #include "request_reponse_struct.hpp"
-#include <sys/time.h>
 
 std::string to_string(size_t val);
 const RouteConfig *findMatchingLocation(const ServerConfig &server, const std::string &path);

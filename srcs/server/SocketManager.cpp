@@ -10,41 +10,30 @@
 /*                                                                            */
 /* ************************************************************************** */
 
+#include <cerrno>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include "SocketManager.hpp"
+#include "file_utils.hpp"
 #include "request_parser.hpp"
 #include "request_reponse_struct.hpp"
-#include "file_utils.hpp"
 #include "utils.hpp"
-#include <iostream>
-#include <unistd.h>
-#include <stdexcept>  // std::runtime_error
-#include <string>     // include <cstdiocket.hccept
-#include <sys/socket.h> //accept()
-#include <cstdio>
-#include <fcntl.h>
-#include <sstream> // for std::ostringstream
-#include <cstdlib>
-#include <cerrno>
-#include <cstring> //for std::strerror
-#include <cctype>
 
 #ifndef LOG
 #define LOG(...) std::fprintf(stderr, __VA_ARGS__)
 #endif
 
-/*
-	1. getaddrinfo();
-	2. socket();
-	3. bind();
-	4. listen();
-	5. accept();
-	6. send() || recv();
-	7. close() || shutdown() close();
-
-*/
-
-/*   --- CLIENT STATE DEFINITION   ---*/
-
+// ============================ ClientState ====================================
 bool ClientState::mpDone() const
 {
 	return mp.isDone();
@@ -73,12 +62,13 @@ ClientState::ClientState() :
 		maxFilePerPart(0),
 		multipartError(false),
 		multipartStatusCode(0),
-		multipartStatusTitle(),
-		multipartStatusBody()
+	multipartStatusTitle(),
+	multipartStatusBody()
 {
 	return ;
 }
 
+// ============================ State helpers =================================
 /* helper for safeguard*/
 //debug func
 
@@ -114,6 +104,9 @@ SocketManager::SocketManager(const Config &config) :
 	return ;
 }
 
+// ========================= SocketManager lifecycle ==========================
+
+// --- CGI detection helper ---------------------------------------------------
 static bool isCgiEndpoint(const RouteConfig &route, const std::string &urlPath)
 {
 	const std::string ext = getFileExtension(urlPath);
@@ -131,6 +124,7 @@ bool SocketManager::tryCgiDispatchNow(int fd,
 	return true;
 }
 
+// --- Multipart housekeeping -------------------------------------------------
 void SocketManager::resetMultipartState(ClientState &st)
 {
 	if (st.mpCtx.fileFd >= 0)
@@ -335,6 +329,7 @@ SocketManager::~SocketManager()
 		delete m_servers[i];
 }
 
+// ------------------------------ Poll setup ---------------------------------
 void SocketManager::addServer(const std::string &host, unsigned short port)
 {
 	ServerSocket* server = new ServerSocket(host, port);
