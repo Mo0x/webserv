@@ -585,17 +585,24 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 			return false;
 		}
 
-		st.contentLength = cl;
+                st.contentLength = cl;
 
-		// 4) Early 413 if CL exceeds policy
-		if (st.maxBodyAllowed > 0 && st.contentLength > st.maxBodyAllowed)
-		{
-			Response err = makeHtmlError(413, "Payload Too Large",
-				"<h1>413 Payload Too Large</h1>");
-                        finalizeAndQueue(fd, err);
+                // 4) Early 413 if CL exceeds policy
+                if (st.maxBodyAllowed > 0 && st.contentLength > st.maxBodyAllowed)
+                {
+                        const ServerConfig &srv = findServerForClient(fd);
+                        const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+                        Response err = makeConfigErrorResponse(
+                                srv,
+                                rt,
+                                413,
+                                "Payload Too Large",
+                                "<h1>413 Payload Too Large</h1>"
+                        );
+                        finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
                         setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
-			return false;
-		}
+                        return false;
+                }
 
 		return true;
 	}
@@ -703,8 +710,15 @@ bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
 
         if (st.multipartBoundary.empty())
         {
-                Response err = makeHtmlError(400, "Bad Request",
-                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>");
+                const ServerConfig &srv = findServerForClient(fd);
+                const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+                Response err = makeConfigErrorResponse(
+                        srv,
+                        rt,
+                        400,
+                        "Bad Request",
+                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
+                );
                 finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
                 return false;
         }
@@ -713,8 +727,13 @@ bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
         const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
         if (!route || route->upload_path.empty())
         {
-                Response err = makeHtmlError(403, "Forbidden",
-                        "<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>");
+                Response err = makeConfigErrorResponse(
+                        server,
+                        route,
+                        403,
+                        "Forbidden",
+                        "<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
+                );
                 finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
                 return false;
         }
