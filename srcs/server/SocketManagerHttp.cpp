@@ -455,20 +455,21 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 	{
 		if (!isMethodAllowedForRoute(st.req.method, route->allowed_methods))
 		{
-			std::set<std::string> allowSet = normalizeAllowedForAllowHeader(route->allowed_methods);
-			std::string allowHeader = joinAllowedMethods(allowSet);
+			Response res = makeConfigErrorResponse(
+				server,          // ServerConfig&
+				route,
+				405,
+				"Method Not Allowed",
+				"<h1>405 Method Not Allowed</h1>"   // fallback if no custom page
+			);
 
-			Response res;
-			res.status_code = 405;
-			res.status_message = "Method Not Allowed";
-			res.headers["Allow"] = allowHeader;
-			res.headers["Content-Type"] = "text/html; charset=utf-8";
-			res.body = "<h1>405 Method Not Allowed</h1>";
-			res.headers["Content-Length"] = to_string(res.body.length());
-			res.close_connection = false;
+			// Keep your Allow header logic exactly as before
+			res.headers["Allow"] =
+				joinAllowedMethods(normalizeAllowedForAllowHeader(route->allowed_methods));
 
-                        finalizeAndQueue(fd, res);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
+			finalizeAndQueue(fd, st.req, res,
+							/*body_expected=*/false,
+							/*body_fully_consumed=*/true);
 			return false;
 		}
 	}
