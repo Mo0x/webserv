@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/21 16:08:52 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/21 17:49:01 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -451,10 +451,10 @@ void SocketManager::handleNewConnection(int listen_fd)
 		ClientState st = ClientState();
 		setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
 		st.recvBuffer     = std::string();
-	st.bodyBuffer     = std::string();
-	st.isChunked      = false;
-	st.contentLength  = 0;
-	st.maxBodyAllowed = 0;
+		st.bodyBuffer     = std::string();
+		st.isChunked      = false;
+		st.contentLength  = 0;
+		st.maxBodyAllowed = 0;
 		st.writeBuffer.clear();
 		st.forceCloseAfterWrite = false;
 		st.closing = false;
@@ -502,17 +502,6 @@ void SocketManager::clearPollout(int fd)
 	}
 }
 
-Response SocketManager::makeHtmlError(int code, const std::string& reason, const std::string& html)
-{
-
-	Response r;
-	r.status_code = code;
-	r.status_message = reason;
-	r.headers["Content-Type"] = "text/html; charset=utf-8";
-	r.headers["Content-Length"] = to_string(html.size());
-	r.body = html;
-	return r;
-}
 
 void SocketManager::queueErrorAndClose(int fd, int status,
 														   const std::string &title,
@@ -1180,54 +1169,6 @@ static std::string getStatusMessage(int code)
 	}
 }
 
-std::string SocketManager::buildErrorResponse(int code, const ServerConfig &server)
-{
-	//DEBUG FOR CUSTOM
-	std::cerr << "[ERROR] buildErrorResponse code=" << code << std::endl;
-    std::cerr << "[ERROR] server.root=" << server.root << std::endl;
-    std::cerr << "[ERROR] server.error_pages size=" << server.error_pages.size() << std::endl;
-
-    for (std::map<int, std::string>::const_iterator it = server.error_pages.begin();
-         it != server.error_pages.end(); ++it)
-    {
-        std::cerr << "  [ERROR] error_page " << it->first << " -> " << it->second << std::endl;
-    }
-	//END DEBUG
-	Response res;
-	res.status_code = code;
-	res.close_connection = true;
-	res.headers["Content-Type"] = "text/html; charset=utf-8";
-
-	std::map<int, std::string>::const_iterator it = server.error_pages.find(code);
-	if (it != server.error_pages.end())
-	{
-		std::string relativePath = it->second;
-		if (!relativePath.empty() && relativePath[0] == '/')
-			relativePath = relativePath.substr(1);
-
-		std::string fullPath = server.root;
-			if (!fullPath.empty() && fullPath[fullPath.size()-1] == '/')
-				fullPath.erase(fullPath.size()-1);
-		fullPath += "/" + relativePath;
-
-		std::cout << "[DEBUG] server.root = " << server.root << std::endl;
-		std::cout << "[DEBUG] Looking for custom error page: " << fullPath << std::endl;
-
-		if (fileExists(fullPath))
-		{
-			res.body = readFile(fullPath);
-			res.status_message = getStatusMessage(code);
-			res.headers["Content-Length"] = to_string(res.body.length());
-			return build_http_response(res);
-		}
-	}
-
-	// fallback default body
-	res.status_message = getStatusMessage(code);
-	res.body = "<h1>" + to_string(code) + " " + res.status_message + "</h1>";
-	res.headers["Content-Length"] = to_string(res.body.length());
-	return build_http_response(res);
-}
 
 void SocketManager::setServers(const std::vector<ServerConfig> & servers)
 {
