@@ -257,82 +257,82 @@ void SocketManager::startCgiDispatch(int fd,
 
 	// Resolve the script path securely before spawning
 	char realBuf[PATH_MAX];
-	if (!::realpath(st.cgi.scriptFsPath.c_str(), realBuf))
-	{
-		Response res;
-		if (errno == ENOENT || errno == ENOTDIR)
-			res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1><p>CGI script not found.</p>");
-		else
-			res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>Failed to resolve CGI script.</p>");
-		finalizeAndQueue(fd, st.req, res, false, true);
-		return;
-	}
-	std::string absScript(realBuf);
-	if (!isPathSafe(workingDir, absScript))
-	{
-		Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1><p>CGI script outside root.</p>");
-		finalizeAndQueue(fd, st.req, res, false, true);
-		return;
-	}
-	struct stat sb;
-	if (::stat(absScript.c_str(), &sb) != 0)
-	{
-		Response res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1><p>CGI script missing.</p>");
-		finalizeAndQueue(fd, st.req, res, false, true);
-		return;
-	}
-	if (!S_ISREG(sb.st_mode))
-	{
-		Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script is not a regular file.</p>");
-		finalizeAndQueue(fd, st.req, res, false, true);
-		return;
-	}
-	if (::access(absScript.c_str(), R_OK) != 0)
-	{
-		Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not readable.</p>");
-		finalizeAndQueue(fd, st.req, res, false, true);
-		return;
-	}
-	if (hasInterpreter)
-	{
-		struct stat ist;
-		if (::stat(interpreterPath.c_str(), &ist) != 0 || !S_ISREG(ist.st_mode) || ::access(interpreterPath.c_str(), X_OK) != 0)
-		{
-			Response res = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>Interpreter not found or not executable.</p>");
-			finalizeAndQueue(fd, st.req, res, false, true);
-			return;
-		}
-	}
-	else
-	{
-		bool canExec = (::access(absScript.c_str(), X_OK) == 0);
-		if (!canExec && !fileHasShebang(absScript))
-		{
-			Response res = makeHtmlError(500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not executable.</p>");
-			finalizeAndQueue(fd, st.req, res, false, true);
-			return;
-		}
-	}
+        if (!::realpath(st.cgi.scriptFsPath.c_str(), realBuf))
+        {
+                Response res;
+                if (errno == ENOENT || errno == ENOTDIR)
+                        res = makeConfigErrorResponse(server, &route, 404, "Not Found", "<h1>404 Not Found</h1><p>CGI script not found.</p>");
+                else
+                        res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>Failed to resolve CGI script.</p>");
+                finalizeAndQueue(fd, st.req, res, false, true);
+                return;
+        }
+        std::string absScript(realBuf);
+        if (!isPathSafe(workingDir, absScript))
+        {
+                Response res = makeConfigErrorResponse(server, &route, 403, "Forbidden", "<h1>403 Forbidden</h1><p>CGI script outside root.</p>");
+                finalizeAndQueue(fd, st.req, res, false, true);
+                return;
+        }
+        struct stat sb;
+        if (::stat(absScript.c_str(), &sb) != 0)
+        {
+                Response res = makeConfigErrorResponse(server, &route, 404, "Not Found", "<h1>404 Not Found</h1><p>CGI script missing.</p>");
+                finalizeAndQueue(fd, st.req, res, false, true);
+                return;
+        }
+        if (!S_ISREG(sb.st_mode))
+        {
+                Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script is not a regular file.</p>");
+                finalizeAndQueue(fd, st.req, res, false, true);
+                return;
+        }
+        if (::access(absScript.c_str(), R_OK) != 0)
+        {
+                Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not readable.</p>");
+                finalizeAndQueue(fd, st.req, res, false, true);
+                return;
+        }
+        if (hasInterpreter)
+        {
+                struct stat ist;
+                if (::stat(interpreterPath.c_str(), &ist) != 0 || !S_ISREG(ist.st_mode) || ::access(interpreterPath.c_str(), X_OK) != 0)
+                {
+                        Response res = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>Interpreter not found or not executable.</p>");
+                        finalizeAndQueue(fd, st.req, res, false, true);
+                        return;
+                }
+        }
+        else
+        {
+                bool canExec = (::access(absScript.c_str(), X_OK) == 0);
+                if (!canExec && !fileHasShebang(absScript))
+                {
+                        Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not executable.</p>");
+                        finalizeAndQueue(fd, st.req, res, false, true);
+                        return;
+                }
+        }
 	st.cgi.scriptFsPath = absScript;
 
-	// ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
-	int inPipe[2], outPipe[2];
-	if (::pipe(inPipe)  < 0 || ::pipe(outPipe) < 0) {
-		Response err = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>pipe() failed.</p>");
-		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-		return;
-	}
+        // ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
+        int inPipe[2], outPipe[2];
+        if (::pipe(inPipe)  < 0 || ::pipe(outPipe) < 0) {
+                Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>pipe() failed.</p>");
+                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+                return;
+        }
 	int fl;
 	fl = fcntl(inPipe[1], F_GETFL, 0);  if (fl != -1) fcntl(inPipe[1], F_SETFL, fl | O_NONBLOCK);
 	fl = fcntl(outPipe[0], F_GETFL, 0); if (fl != -1) fcntl(outPipe[0], F_SETFL, fl | O_NONBLOCK);
-	pid_t pid = ::fork();
-	if (pid < 0) {
-		::close(inPipe[0]); ::close(inPipe[1]);
-		::close(outPipe[0]); ::close(outPipe[1]);
-		Response err = makeHtmlError(502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>fork() failed.</p>");
-		finalizeAndQueue(fd, st.req, err, false, true);
-		return;
-	}
+        pid_t pid = ::fork();
+        if (pid < 0) {
+                ::close(inPipe[0]); ::close(inPipe[1]);
+                ::close(outPipe[0]); ::close(outPipe[1]);
+                Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>fork() failed.</p>");
+                finalizeAndQueue(fd, st.req, err, false, true);
+                return;
+        }
 
 	if (pid == 0) {
 		// ---- CHILD ----
@@ -491,34 +491,34 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 									const std::string &body)
 {
 	    (void)server; // unused for now; kept for future CGI/env or policy checks 
-	if (route && !route->upload_path.empty())
-	{
-		const std::string &dir = route->upload_path;
-		//dir must exist
-		if (!dirExists(dir))
-		{
-			Response res = makeHtmlError(409, "Conflict",  "<h1>409 Conflict</h1><p>Upload directory missing.</p>");
-			finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
-			return;
-		}
-		//building a safe absolute path within upload dir
-		std::string fname = makeUploadFileName(req.path);
-		std::string full = joinPath(dir, fname);
-		if (!isPathSafe(dir,full))
-		{
-			Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
-			finalizeAndQueue(fd, req, res, false, true);
-			return ;
-		}
-		// writefile
-		std::ofstream ofs(full.c_str(), std::ios::out | std::ios:: binary | std::ios::trunc);
-		if (!ofs)
-		{
-			Response res = makeHtmlError(500, "Internal Server Error",
-										"<h1>500 Internal Server Error</h1>");
-			finalizeAndQueue(fd, req, res, false, true);
-			return;
-		}
+        if (route && !route->upload_path.empty())
+        {
+                const std::string &dir = route->upload_path;
+                //dir must exist
+                if (!dirExists(dir))
+                {
+                        Response res = makeConfigErrorResponse(server, route, 409, "Conflict",  "<h1>409 Conflict</h1><p>Upload directory missing.</p>");
+                        finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
+                        return;
+                }
+                //building a safe absolute path within upload dir
+                std::string fname = makeUploadFileName(req.path);
+                std::string full = joinPath(dir, fname);
+                if (!isPathSafe(dir,full))
+                {
+                        Response res = makeConfigErrorResponse(server, route, 403, "Forbidden", "<h1>403 Forbidden</h1>");
+                        finalizeAndQueue(fd, req, res, false, true);
+                        return ;
+                }
+                // writefile
+                std::ofstream ofs(full.c_str(), std::ios::out | std::ios:: binary | std::ios::trunc);
+                if (!ofs)
+                {
+                        Response res = makeConfigErrorResponse(server, route, 500, "Internal Server Error",
+                                                                                "<h1>500 Internal Server Error</h1>");
+                        finalizeAndQueue(fd, req, res, false, true);
+                        return;
+                }
 		if (!body.empty())
 			ofs.write(&body[0], static_cast<std::streamsize>(body.size()));
 		ofs.close();
@@ -541,10 +541,10 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 	//     return;
 	// }
 
-	// 3) Nothing to do for POST on this route
-	{
-		Response res = makeHtmlError(404, "Not Found",
-									"<h1>404 Not Found</h1><p>No upload or CGI here.</p>");
-		finalizeAndQueue(fd, req, res, false, true);
-	}
+        // 3) Nothing to do for POST on this route
+        {
+                Response res = makeConfigErrorResponse(server, route, 404, "Not Found",
+                                                                        "<h1>404 Not Found</h1><p>No upload or CGI here.</p>");
+                finalizeAndQueue(fd, req, res, false, true);
+        }
 }
