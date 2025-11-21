@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/21 17:49:01 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/21 18:00:34 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -521,8 +521,15 @@ void SocketManager::queueErrorAndClose(int fd, int status,
 		if (st.closing)
 				return;
 		st.closing = true;
-		Response res = makeHtmlError(status, title, html);
-		res.close_connection = true;     // invalid headers → must close
+
+		const ServerConfig &srv = findServerForClient(fd);
+		const RouteConfig  *route = NULL;
+		if (!st.req.path.empty())
+			route = findMatchingLocation(srv, st.req.path);
+
+		Response res = makeConfigErrorResponse(srv, route, status, title, html);
+		res.close_connection = true;     // must close on these paths
+		
 		finalizeAndQueue(fd, res);
 }
 
@@ -627,15 +634,15 @@ void SocketManager::dispatchRequest(int fd, const Request &req,
 	// path safety / existence
 	if (!isPathSafe(effectiveRoot, fullPath))
 	{
-		Response res = makeHtmlError(403, "Forbidden", "<h1>403 Forbidden</h1>");
-		const bool body_expected = false;
+		Response res = makeConfigErrorResponse(server, route, 403, "Forbidden", "<h1> 403 Forbidden</h1>");
+		    const bool body_expected = false;
 		const bool body_fully_consumed = true;
 		finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
 		return;
 	}
 	if (!fileExists(fullPath))
 	{
-		Response res = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1>");
+		    Response res = makeConfigErrorResponse(server, route, 404, "Not Found", "<h1>404 Not Found</h1>");
 		const bool body_expected = false;
 		const bool body_fully_consumed = true;
 		finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
@@ -1154,7 +1161,7 @@ void SocketManager::handleClientDisconnect(int fd)
 	m_clients.erase(fd);
 }
 
-static std::string getStatusMessage(int code)
+/* static std::string getStatusMessage(int code)
 {
 	switch (code)
 	{
@@ -1167,7 +1174,7 @@ static std::string getStatusMessage(int code)
 		case 500: return "Internal Server Error";
 		default:  return "Error";
 	}
-}
+} */
 
 
 void SocketManager::setServers(const std::vector<ServerConfig> & servers)

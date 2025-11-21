@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/21 17:19:47 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/21 17:54:38 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -194,7 +194,7 @@ class SocketManager
 	bool tryParseHeaders(int fd, ClientState &st);
 	bool checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos);
 	Response makeHtmlError(int code, const std::string& reason, const std::string& html);
-	Response SocketManager::makeConfigErrorResponse(const ServerConfig &server,
+	Response makeConfigErrorResponse(const ServerConfig &server,
 													const RouteConfig  *route,
 													int                 code,
 													const std::string  &reason,
