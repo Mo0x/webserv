@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/20 12:07:38 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/21 17:11:19 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -119,16 +119,19 @@ struct ClientState
 // ================================ Manager ===================================
 class SocketManager
 {
-public:
+	public:
 	SocketManager(const Config &config);
 	SocketManager();
 	~SocketManager();
 
 	// Lifecycle
 	void addServer(const std::string& host, unsigned short port);
+	void setServers(const std::vector<ServerConfig> & servers);
 	void initPoll();
 	void run();
 
+	
+	private:
 	// Event loop handlers
 	bool isListeningSocket(int fd) const;
 	void handleNewConnection(int listen_fd);
@@ -139,7 +142,6 @@ public:
 	// Connection / server context
 	std::string buildErrorResponse(int code, const ServerConfig &server);
 	const ServerConfig& findServerForClient(int fd) const;
-	void setServers(const std::vector<ServerConfig> & servers);
 	bool clientRequestedClose(const Request &req) const;
 
 	// Poll bookkeeping
@@ -150,8 +152,6 @@ public:
 	void finalizeAndQueue(int fd, const Request &req, Response &res, bool body_expected, bool body_fully_consumed);
 	void finalizeAndQueue(int fd, Response &res);
 	bool shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const;
-
-private:
 	// Core sockets and poll bookkeeping
 	std::vector<ServerSocket*>	m_servers;
 	std::vector<struct pollfd>	m_pollfds;

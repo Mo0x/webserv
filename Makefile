@@ -5,21 +5,22 @@ INCDIRS = ./includes ./includes/legacy
 CXXFLAGS = -g -Wall -Wextra -Werror -std=c++98 $(addprefix -I,$(INCDIRS))
 
 SRCS = \
-        ./srcs/main.cpp \
-        ./srcs/cfg/Config.cpp \
-        ./srcs/cfg/ConfigLexer.cpp \
-        ./srcs/cfg/ConfigParser.cpp \
-		./srcs/cgi/Cgi.cpp \
-	./srcs/server/Chunked.cpp \
-	./srcs/server/ServerSocket.cpp \
-	./srcs/server/SocketManager.cpp \
-	./srcs/server/SocketManagerDelete.cpp \
-	./srcs/server/SocketManagerHttp.cpp \
-	./srcs/server/SocketManagerPost.cpp \
-	./srcs/server/Response.cpp \
-	./srcs/server/MultipartStreamParser.cpp \
-	./srcs/utils/file_utils.cpp \
-        ./srcs/utils/utils.cpp
+			./srcs/main.cpp \
+			./srcs/cfg/Config.cpp \
+			./srcs/cfg/ConfigLexer.cpp \
+			./srcs/cfg/ConfigParser.cpp \
+			./srcs/cgi/Cgi.cpp \
+			./srcs/server/Chunked.cpp \
+			./srcs/server/ServerSocket.cpp \
+			./srcs/server/SocketManager.cpp \
+			./srcs/server/SocketManagerDelete.cpp \
+			./srcs/server/SocketManagerError.cpp \
+			./srcs/server/SocketManagerHttp.cpp \
+			./srcs/server/SocketManagerPost.cpp \
+			./srcs/server/Response.cpp \
+			./srcs/server/MultipartStreamParser.cpp \
+			./srcs/utils/file_utils.cpp \
+			./srcs/utils/utils.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 

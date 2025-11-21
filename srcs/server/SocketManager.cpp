@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/19 14:59:18 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/21 16:08:52 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1182,6 +1182,17 @@ static std::string getStatusMessage(int code)
 
 std::string SocketManager::buildErrorResponse(int code, const ServerConfig &server)
 {
+	//DEBUG FOR CUSTOM
+	std::cerr << "[ERROR] buildErrorResponse code=" << code << std::endl;
+    std::cerr << "[ERROR] server.root=" << server.root << std::endl;
+    std::cerr << "[ERROR] server.error_pages size=" << server.error_pages.size() << std::endl;
+
+    for (std::map<int, std::string>::const_iterator it = server.error_pages.begin();
+         it != server.error_pages.end(); ++it)
+    {
+        std::cerr << "  [ERROR] error_page " << it->first << " -> " << it->second << std::endl;
+    }
+	//END DEBUG
 	Response res;
 	res.status_code = code;
 	res.close_connection = true;
