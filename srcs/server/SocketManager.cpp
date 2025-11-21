@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/21 18:00:34 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/21 18:29:47 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -182,7 +182,15 @@ bool SocketManager::handleMultipartFailure(int fd, ClientState &st)
 	else
 		body = "<h1>413 Payload Too Large</h1><p>Multipart upload aborted.</p>";
 
-	Response err = makeHtmlError(status, title, body);
+	const ServerConfig &srv = findServerForClient(fd);
+	const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+	Response err = makeConfigErrorResponse(
+		srv,
+		rt,
+		status,
+		title,
+		body
+	);
 	finalizeAndQueue(fd, st.req, err, false, true);
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
 	return true;
@@ -635,14 +643,14 @@ void SocketManager::dispatchRequest(int fd, const Request &req,
 	if (!isPathSafe(effectiveRoot, fullPath))
 	{
 		Response res = makeConfigErrorResponse(server, route, 403, "Forbidden", "<h1> 403 Forbidden</h1>");
-		    const bool body_expected = false;
+			const bool body_expected = false;
 		const bool body_fully_consumed = true;
 		finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
 		return;
 	}
 	if (!fileExists(fullPath))
 	{
-		    Response res = makeConfigErrorResponse(server, route, 404, "Not Found", "<h1>404 Not Found</h1>");
+			Response res = makeConfigErrorResponse(server, route, 404, "Not Found", "<h1>404 Not Found</h1>");
 		const bool body_expected = false;
 		const bool body_fully_consumed = true;
 		finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
@@ -1006,10 +1014,10 @@ void SocketManager::handleClientRead(int fd)
 	}
 
 	 if (st.phase == ClientState::CGI_RUNNING)
-    {
-        drainCgiOutput(fd);
-        return;
-    }
+	{
+		drainCgiOutput(fd);
+		return;
+	}
 
 	// -------- BODY-FIRST fast path ------------------------------------------
 	// If we're already in READING_BODY, first try to progress with what we have
@@ -1278,18 +1286,18 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 			handleClientDisconnect(fd);
 			return false;
 		}
-                if (n == 0)
-                {
-                        setPollToWrite(fd);
-                        return false;
-                }
-                st.writeBuffer.erase(0, static_cast<size_t>(n));
-                if (st.phase == ClientState::CGI_RUNNING)
-                        maybeResumeCgiStdout(fd, st);
-        }
+				if (n == 0)
+				{
+						setPollToWrite(fd);
+						return false;
+				}
+				st.writeBuffer.erase(0, static_cast<size_t>(n));
+				if (st.phase == ClientState::CGI_RUNNING)
+						maybeResumeCgiStdout(fd, st);
+		}
 
-        clearPollout(fd);
-        st.writeBuffer.clear();
+		clearPollout(fd);
+		st.writeBuffer.clear();
 
 	if (st.forceCloseAfterWrite || st.closing)
 	{
