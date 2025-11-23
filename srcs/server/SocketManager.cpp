@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 18:03:20 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 18:59:08 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -380,7 +380,7 @@ void SocketManager::run()
 	{
 		// C++98-safe pointer for poll()
 		struct pollfd* pbase = m_pollfds.empty() ? NULL : &m_pollfds[0];
-		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), -1);
+		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), 100); // changed from -1 to 100 for the time out
 		if (rc < 0) {
 			if (errno == EINTR) continue;
 			std::cerr << "poll() error: " << std::strerror(errno) << std::endl;
@@ -424,6 +424,7 @@ void SocketManager::run()
 				}
 			}
 		}
+		checkCgiTimeouts();
 	}
 }
 
