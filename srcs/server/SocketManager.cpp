@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/21 18:29:47 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 15:32:55 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1547,7 +1547,7 @@ void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std:
 	{
 		if (cs->uploadDir.empty() || !dirExists(cs->uploadDir))
 		{
-			LOG("[multipart] upload dir unavailable: %s\n", cs->uploadDir.c_str());
+			std::cerr << "[multipart] upload dir unavailable: " << cs->uploadDir << std::endl;
 			SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
 				"<h1>500 Internal Server Error</h1><p>Upload directory unavailable.</p>");
 			cs->mpCtx.writingFile = false;
@@ -1559,7 +1559,7 @@ void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std:
 			int fd = ::open(fullPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
 			if (fd < 0)
 			{
-				LOG("[multipart] failed to open %s: %s\n", fullPath.c_str(), std::strerror(errno));
+				std::cerr << "[multipart] failed to open " << fullPath << ": " << std::strerror(errno) << std::endl;
 				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
 					"<h1>500 Internal Server Error</h1><p>Unable to create upload file.</p>");
 				cs->mpCtx.writingFile = false;
@@ -1571,15 +1571,13 @@ void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std:
 				size_t slash = fullPath.find_last_of('/');
 				cs->mpCtx.safeFilename = (slash == std::string::npos) ? fullPath : fullPath.substr(slash + 1);
 				cs->mpCtx.partBytes = 0;
-				LOG("[multipart] writing file %s\n", cs->mpCtx.currentFilePath.c_str());
+				std::cerr << "[multipart] writing file " << cs->mpCtx.currentFilePath << std::endl;
 			}
 		}
 	}
 
-	LOG("[multipart] part begin headers=%lu name=\"%s\" filename=\"%s\"\n",
-		static_cast<unsigned long>(headerCount),
-		formName.c_str(),
-		fileName.c_str());
+	std::cerr << "[multipart] par begin headers=" << static_cast<unsigned long>(headerCount)
+		<< "name=" << formName << "filename=" << fileName << std::endl;
 }
 
 void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
@@ -1599,7 +1597,7 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			{
 				if (errno == EINTR)
 					continue;
-				LOG("[multipart] write error: %s\n", std::strerror(errno));
+				std::cerr << "[multipart] write error: " << std::strerror(errno) << std::endl;
 				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
 					"<h1>500 Internal Server Error</h1><p>Failed while writing upload.</p>");
 				break;
@@ -1610,9 +1608,8 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			cs->mpCtx.partBytes += static_cast<size_t>(w);
 			if (cs->maxFilePerPart > 0 && cs->mpCtx.partBytes > cs->maxFilePerPart)
 			{
-				LOG("[multipart] part exceeded limit (%lu > %lu)\n",
-					static_cast<unsigned long>(cs->mpCtx.partBytes),
-					static_cast<unsigned long>(cs->maxFilePerPart));
+				std::cerr << "[multipart] part exceeded limit (" << static_cast<unsigned long>(cs->mpCtx.partBytes)
+				 << " > " <<static_cast<unsigned long>(cs->maxFilePerPart) << std::endl;
 				SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
 					"<h1>413 Payload Too Large</h1><p>Upload exceeded allowed size.</p>");
 				break;
@@ -1629,15 +1626,14 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			cs->mpCtx.fieldBuffer.append(buf, toCopy);
 		if (toCopy < n)
 		{
-			LOG("[multipart] field too large (>%lu bytes)\n", static_cast<unsigned long>(CAP));
+			std::cerr << "[multipart] field too large (>" << static_cast<unsigned long>(CAP) << "bytes)" << std::endl; 
 			SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
 				"<h1>413 Payload Too Large</h1><p>Form field exceeded allowed size.</p>");
 		}
 	}
 
-	LOG("[multipart] part data chunk=%lu total=%lu\n",
-		static_cast<unsigned long>(n),
-		static_cast<unsigned long>(cs->debugMultipartBytes));
+	std::cerr << "[multipart] part data chunk =" << static_cast<unsigned long>(n) << "total ="	<<	static_cast<unsigned long>(cs->debugMultipartBytes)
+	<< std::endl;
 }
 
 void SocketManager::onPartEndThunk(void* user)
@@ -1658,7 +1654,7 @@ void SocketManager::onPartEndThunk(void* user)
 		else if (!cs->mpCtx.currentFilePath.empty())
 		{
 			cs->mpCtx.savedNames.push_back(cs->mpCtx.currentFilePath);
-			LOG("[multipart] saved %s\n", cs->mpCtx.currentFilePath.c_str());
+			std::cerr << "[multipart] saved "cs->mpCtx.currentFilePath.c_str()) << std::endl;
 		}
 		cs->mpCtx.currentFilePath.clear();
 		cs->mpCtx.writingFile = false;
@@ -1671,7 +1667,6 @@ void SocketManager::onPartEndThunk(void* user)
 		cs->mpCtx.fieldName.clear();
 	}
 
-	LOG("[multipart] part end (count=%lu totalBytes=%lu)\n",
-		static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u),
-		static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u));
+	std::cerr >> "[multipart] part end (count=" << static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u)
+	<< "totalBytes=" << static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u) << ")" << std::endl;
 }
