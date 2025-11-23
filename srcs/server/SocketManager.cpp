@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 18:59:08 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 20:23:32 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1003,7 +1003,7 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 			queueMultipartSummary(fd, st);
 			return;
 		}
-		handlePostUploadOrCgi(fd, st.req, server, route, st.bodyBuffer);
+		handlePostUpload(fd, st.req, server, route, st.bodyBuffer);
 		return;
 	}
 	// DELETE to WIRE HERE NEXT
@@ -1060,7 +1060,14 @@ void SocketManager::handleClientRead(int fd)
 
 	 if (st.phase == ClientState::CGI_RUNNING)
 	{
-		drainCgiOutput(fd);
+		  // While CGI is running, the client might:
+		//  - close the connection (we must detect EOF)
+		//  - pipeline the next request (we should buffer it)
+		//
+		// So treat POLLIN normally: read from the socket.
+		if (!readIntoBuffer(fd, st))
+			handleClientDisconnect(fd);
+		//drainCgiOutput(fd);
 		return;
 	}
 

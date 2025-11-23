@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 19:01:22 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 20:23:27 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -215,7 +215,7 @@ class SocketManager
 							const std::string &methodUpper);
 	void finalizeRequestAndQueueResponse(int fd, ClientState &st);
 
-	void	handlePostUploadOrCgi(int fd, 
+	void	handlePostUpload(int fd, 
 									const Request &req,
 									const ServerConfig &server,
 									const RouteConfig *route,

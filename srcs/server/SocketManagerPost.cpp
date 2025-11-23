@@ -496,7 +496,7 @@ void SocketManager::startCgiDispatch(int fd,
 	std::cerr << "[fd " << fd << "] CGI dispatch : wd=" << st.cgi.workingDir.c_str() << "script=" << st.cgi.scriptFsPath.c_str() << std::endl;
 }
 
-void SocketManager::handlePostUploadOrCgi(int fd, 
+void SocketManager::handlePostUpload(int fd, 
 									const Request &req,
 									const ServerConfig &server,
 									const RouteConfig *route,
@@ -513,7 +513,6 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 			finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
 			return;
 		}
-		//building a safe absolute path within upload dir
 		std::string fname = makeUploadFileName(req.path);
 		std::string full = joinPath(dir, fname);
 		if (!isPathSafe(dir,full))
@@ -540,20 +539,10 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 		res.headers["Content-Type"] = "text/plain; charset=utf-8";
 		res.body = "Uploaded as: " + fname + "\n";
 		res.headers["Content-Length"] = to_string(res.body.size());
-		// Optionally expose Location relative to the request route
-		// res.headers["Location"] = joinPath(req.path, fname) will see if needed;
 		finalizeAndQueue(fd, req, res, false, true);
 		return;
 	}
-	// 2) Else: CGI hook (if your config indicates CGI for this route/path)
-	// If you already have a CGI runner, call it here with `body` as stdin.
-	// Example sketch:
-	// if (route && route->cgi_enabled) {
-	//     runCgi(fd, req, server, *route, body); // must call finalizeAndQueue inside
-	//     return;
-	// }
 
-	// 3) Nothing to do for POST on this route
 	{
 		Response res = makeConfigErrorResponse(server, route, 404, "Not Found",
 									"<h1>404 Not Found</h1><p>No upload or CGI here.</p>");
