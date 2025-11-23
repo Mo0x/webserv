@@ -1,0 +1,931 @@
+mgovinda@k1r3p14:~/webserv ‹main›$ git push                                                                                                                     
+warning: redirecting to https://github.com/Mo0x/webserv/
+Enumerating objects: 14, done.
+Counting objects: 100% (14/14), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (7/7), done.
+Writing objects: 100% (8/8), 2.10 KiB | 2.10 MiB/s, done.
+Total 8 (delta 5), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (5/5), completed with 5 local objects.
+To http://github.com/Mo0x/webserv
+   25a33a4..fff7dbf  main -> main
+mgovinda@k1r3p14:~/webserv ‹main›$ mkdir -p ./www/autoindex
+echo "a" > ./www/autoindex/a.txt
+echo "b" > ./www/autoindex/b.txt
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+Unknown directive in location: return
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=88
+[fd 4] tryReadBody: chunked=0 recv=88 body=0
+[fd 4] parsed request line + headers: GET /autoindex/ HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=448
+[fd 4] tryReadBody: chunked=0 recv=448 body=0
+[fd 4] parsed request line + headers: GET /autoindex/ HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=0, i] [sec-fetch-dest: document] [sec-fetch-mode: navigate] [sec-fetch-site: none] [sec-fetch-user: ?1] [upgrade-insecure-requests: 1] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=448
+[fd 4] tryReadBody: chunked=0 recv=448 body=0
+[fd 4] parsed request line + headers: GET /favicon.ico HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=6] [referer: http://127.0.0.1:8080/autoindex/] [sec-fetch-dest: image] [sec-fetch-mode: no-cors] [sec-fetch-site: same-origin] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+^C
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+Fatal error: Expected ';' after redirect
+mgovinda@k1r3p14:~/webserv ‹main*›$ 
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=82
+[fd 4] tryReadBody: chunked=0 recv=82 body=0
+[fd 4] parsed request line + headers: GET /old/ HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] phase READING_HEADERS -> SENDING_RESPONSE at finalizeAndQueue
+Disconnecting fd 4
+[fd 4] phase SENDING_RESPONSE -> CLOSED at handleClientDisconnect
+[fd 4] phase CLOSED -> SENDING_RESPONSE at applyRoutePolicyAfterHeaders
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=442
+[fd 4] tryReadBody: chunked=0 recv=442 body=0
+[fd 4] parsed request line + headers: GET /old/ HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=0, i] [sec-fetch-dest: document] [sec-fetch-mode: navigate] [sec-fetch-site: none] [sec-fetch-user: ?1] [upgrade-insecure-requests: 1] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] phase READING_HEADERS -> SENDING_RESPONSE at finalizeAndQueue
+Disconnecting fd 4
+[fd 4] phase SENDING_RESPONSE -> CLOSED at handleClientDisconnect
+[fd 4] phase CLOSED -> SENDING_RESPONSE at applyRoutePolicyAfterHeaders
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=438
+[fd 4] tryReadBody: chunked=0 recv=438 body=0
+[fd 4] parsed request line + headers: GET / HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=0, i] [sec-fetch-dest: document] [sec-fetch-mode: navigate] [sec-fetch-site: none] [sec-fetch-user: ?1] [upgrade-insecure-requests: 1] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=438
+[fd 4] tryReadBody: chunked=0 recv=438 body=0
+[fd 4] parsed request line + headers: GET /favicon.ico HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=6] [referer: http://127.0.0.1:8080/] [sec-fetch-dest: image] [sec-fetch-mode: no-cors] [sec-fetch-site: same-origin] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Disconnecting fd 4
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=465
+[fd 4] tryReadBody: chunked=0 recv=465 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=0, i] [sec-fetch-dest: document] [sec-fetch-mode: navigate] [sec-fetch-site: none] [sec-fetch-user: ?1] [upgrade-insecure-requests: 1] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=452
+[fd 4] tryReadBody: chunked=0 recv=452 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=0, i] [sec-fetch-dest: document] [sec-fetch-mode: navigate] [sec-fetch-site: none] [sec-fetch-user: ?1] [upgrade-insecure-requests: 1] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=1986240 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=452
+[fd 4] tryReadBody: chunked=0 recv=452 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8] [accept-encoding: gzip, deflate, br, zstd] [accept-language: en-US,en;q=0.5] [connection: keep-alive] [host: 127.0.0.1:8080] [priority: u=0, i] [sec-fetch-dest: document] [sec-fetch-mode: navigate] [sec-fetch-site: none] [sec-fetch-user: ?1] [upgrade-insecure-requests: 1] [user-agent: Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=1986335 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+^C
+mgovinda@k1r3p14:~/webserv ‹main*›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   config.conf
+        deleted:    configlocationtest.conf
+        modified:   fulltest.conf
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        www/autoindex/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+mgovinda@k1r3p14:~/webserv ‹main*›$ git add . 
+mgovinda@k1r3p14:~/webserv ‹main*›$ git commit -m "delete unused cfg"                                                                                            
+[main 563bf07] delete unused cfg
+ 4 files changed, 3 insertions(+), 1 deletion(-)
+ rename configlocationtest.conf => config.conf (100%)
+ create mode 100644 www/autoindex/a.txt
+ create mode 100644 www/autoindex/b.txt
+mgovinda@k1r3p14:~/webserv ‹main›$ git push                         
+warning: redirecting to https://github.com/Mo0x/webserv/
+Enumerating objects: 10, done.
+Counting objects: 100% (10/10), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (7/7), 496 bytes | 496.00 KiB/s, done.
+Total 7 (delta 3), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+To http://github.com/Mo0x/webserv
+   fff7dbf..563bf07  main -> main
+mgovinda@k1r3p14:~/webserv ‹main›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+^C
+mgovinda@k1r3p14:~/webserv ‹main›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=105
+[fd 4] tryReadBody: chunked=0 recv=105 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=92
+[fd 4] tryReadBody: chunked=0 recv=92 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=1990497 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+^C
+mgovinda@k1r3p14:~/webserv ‹main›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+mgovinda@k1r3p14:~/webserv ‹main›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   srcs/server/SocketManagerPost.cpp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+mgovinda@k1r3p14:~/webserv ‹main*›$ git diff                     
+
+mgovinda@k1r3p14:~/webserv ‹main*›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   srcs/server/SocketManagerPost.cpp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+mgovinda@k1r3p14:~/webserv ‹main*›$ git add . 
+mgovinda@k1r3p14:~/webserv ‹main*›$ git commit -m "fixing query thinggy for cgi"
+[main d9ee1ef] fixing query thinggy for cgi
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+mgovinda@k1r3p14:~/webserv ‹main›$ git push                                    
+warning: redirecting to https://github.com/Mo0x/webserv/
+Enumerating objects: 9, done.
+Counting objects: 100% (9/9), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (5/5), 473 bytes | 473.00 KiB/s, done.
+Total 5 (delta 4), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (4/4), completed with 4 local objects.
+To http://github.com/Mo0x/webserv
+   563bf07..d9ee1ef  main -> main
+mgovinda@k1r3p14:~/webserv ‹main›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   TODO
+        modified:   srcs/server/SocketManagerPost.cpp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+mgovinda@k1r3p14:~/webserv ‹main*›$ make re                 
+rm -f ./srcs/main.o ./srcs/cfg/Config.o ./srcs/cfg/ConfigLexer.o ./srcs/cfg/ConfigParser.o ./srcs/cgi/Cgi.o ./srcs/server/Chunked.o ./srcs/server/ServerSocket.o ./srcs/server/SocketManager.o ./srcs/server/SocketManagerDelete.o ./srcs/server/SocketManagerError.o ./srcs/server/SocketManagerHttp.o ./srcs/server/SocketManagerPost.o ./srcs/server/Response.o ./srcs/server/MultipartStreamParser.o ./srcs/utils/file_utils.o ./srcs/utils/utils.o
+rm -f ./webserv
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/main.cpp -o srcs/main.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cfg/Config.cpp -o srcs/cfg/Config.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cfg/ConfigLexer.cpp -o srcs/cfg/ConfigLexer.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cfg/ConfigParser.cpp -o srcs/cfg/ConfigParser.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cgi/Cgi.cpp -o srcs/cgi/Cgi.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/Chunked.cpp -o srcs/server/Chunked.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/ServerSocket.cpp -o srcs/server/ServerSocket.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManager.cpp -o srcs/server/SocketManager.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerDelete.cpp -o srcs/server/SocketManagerDelete.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerError.cpp -o srcs/server/SocketManagerError.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerHttp.cpp -o srcs/server/SocketManagerHttp.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerPost.cpp -o srcs/server/SocketManagerPost.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/Response.cpp -o srcs/server/Response.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/MultipartStreamParser.cpp -o srcs/server/MultipartStreamParser.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/utils/file_utils.cpp -o srcs/utils/file_utils.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/utils/utils.cpp -o srcs/utils/utils.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -o ./webserv ./srcs/main.o ./srcs/cfg/Config.o ./srcs/cfg/ConfigLexer.o ./srcs/cfg/ConfigParser.o ./srcs/cgi/Cgi.o ./srcs/server/Chunked.o ./srcs/server/ServerSocket.o ./srcs/server/SocketManager.o ./srcs/server/SocketManagerDelete.o ./srcs/server/SocketManagerError.o ./srcs/server/SocketManagerHttp.o ./srcs/server/SocketManagerPost.o ./srcs/server/Response.o ./srcs/server/MultipartStreamParser.o ./srcs/utils/file_utils.o ./srcs/utils/utils.o
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=105
+[fd 4] tryReadBody: chunked=0 recv=105 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+^C
+mgovinda@k1r3p14:~/webserv ‹main*›$ make   
+make: Nothing to be done for 'all'.
+mgovinda@k1r3p14:~/webserv ‹main*›$ 
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf                                    
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=105
+[fd 4] tryReadBody: chunked=0 recv=105 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse
+[fd 4] phase READY_TO_DISPATCH -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=92
+[fd 4] tryReadBody: chunked=0 recv=92 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2028949 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+^C
+mgovinda@k1r3p14:~/webserv ‹main*›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   TODO
+        modified:   srcs/server/SocketManagerPost.cpp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+mgovinda@k1r3p14:~/webserv ‹main*›$ git add . 
+mgovinda@k1r3p14:~/webserv ‹main*›$ git commit -m "fixing query thinggy for cgi + formating monster dispatchCGI"
+[main 680711f] fixing query thinggy for cgi + formating monster dispatchCGI
+ 2 files changed, 100 insertions(+), 89 deletions(-)
+mgovinda@k1r3p14:~/webserv ‹main›$ git push                                                                    
+warning: redirecting to https://github.com/Mo0x/webserv/
+Enumerating objects: 11, done.
+Counting objects: 100% (11/11), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (6/6), done.
+Writing objects: 100% (6/6), 1.14 KiB | 1.14 MiB/s, done.
+Total 6 (delta 4), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (4/4), completed with 4 local objects.
+To http://github.com/Mo0x/webserv
+   d9ee1ef..680711f  main -> main
+mgovinda@k1r3p14:~/webserv ‹main›$ make
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManager.cpp -o srcs/server/SocketManager.o
+srcs/server/SocketManager.cpp:215:3: error: misleading indentation; statement is not part of the previous 'if' [-Werror,-Wmisleading-indentation]
+                const size_t nextTotal = st.mpCtx.totalDecoded + n;
+                ^
+srcs/server/SocketManager.cpp:212:2: note: previous statement is here
+        if (!st.isMultipart || n == 0)
+        ^
+1 error generated.
+make: *** [Makefile:36: srcs/server/SocketManager.o] Error 1
+mgovinda@k1r3p14:~/webserv ‹main*›$ make
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManager.cpp -o srcs/server/SocketManager.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerPost.cpp -o srcs/server/SocketManagerPost.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -o ./webserv ./srcs/main.o ./srcs/cfg/Config.o ./srcs/cfg/ConfigLexer.o ./srcs/cfg/ConfigParser.o ./srcs/cgi/Cgi.o ./srcs/server/Chunked.o ./srcs/server/ServerSocket.o ./srcs/server/SocketManager.o ./srcs/server/SocketManagerDelete.o ./srcs/server/SocketManagerError.o ./srcs/server/SocketManagerHttp.o ./srcs/server/SocketManagerPost.o ./srcs/server/Response.o ./srcs/server/MultipartStreamParser.o ./srcs/utils/file_utils.o ./srcs/utils/utils.o
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=105
+[fd 4] tryReadBody: chunked=0 recv=105 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2050941 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=114
+[fd 4] tryReadBody: chunked=0 recv=114 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/bash_is_here.sh?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2051526 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/bash_is_here.sh
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+Disconnecting fd 7
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=101
+[fd 4] tryReadBody: chunked=0 recv=101 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/bash_is_here.sh HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2052027 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/bash_is_here.sh
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+^C
+mgovinda@k1r3p14:~/webserv ‹main*›$ git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   TODO
+        modified:   includes/SocketManager.hpp
+        modified:   srcs/server/SocketManager.cpp
+        modified:   srcs/server/SocketManagerPost.cpp
+
+no changes added to commit (use "git add" and/or "git commit -a")
+mgovinda@k1r3p14:~/webserv ‹main*›$ git add .     
+mgovinda@k1r3p14:~/webserv ‹main*›$ git commit -m "deleted unused func still fixing query"                     
+[main a570a09] deleted unused func still fixing query
+ 4 files changed, 130 insertions(+), 146 deletions(-)
+mgovinda@k1r3p14:~/webserv ‹main›$ git push                                              
+warning: redirecting to https://github.com/Mo0x/webserv/
+Enumerating objects: 17, done.
+Counting objects: 100% (17/17), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (9/9), done.
+Writing objects: 100% (9/9), 1.62 KiB | 1.62 MiB/s, done.
+Total 9 (delta 7), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (7/7), completed with 7 local objects.
+To http://github.com/Mo0x/webserv
+   680711f..a570a09  main -> main
+mgovinda@k1r3p14:~/webserv ‹main›$ make
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManager.cpp -o srcs/server/SocketManager.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -o ./webserv ./srcs/main.o ./srcs/cfg/Config.o ./srcs/cfg/ConfigLexer.o ./srcs/cfg/ConfigParser.o ./srcs/cgi/Cgi.o ./srcs/server/Chunked.o ./srcs/server/ServerSocket.o ./srcs/server/SocketManager.o ./srcs/server/SocketManagerDelete.o ./srcs/server/SocketManagerError.o ./srcs/server/SocketManagerHttp.o ./srcs/server/SocketManagerPost.o ./srcs/server/Response.o ./srcs/server/MultipartStreamParser.o ./srcs/utils/file_utils.o ./srcs/utils/utils.o
+mgovinda@k1r3p14:~/webserv ‹main*›$ git add .              
+mgovinda@k1r3p14:~/webserv ‹main*›$ git commit -m "fix: handleClientRead using splitPathAndQuery for it"
+[main f51aae1] fix: handleClientRead using splitPathAndQuery for it
+ 1 file changed, 9 insertions(+), 8 deletions(-)
+mgovinda@k1r3p14:~/webserv ‹main›$ git push                                                            
+warning: redirecting to https://github.com/Mo0x/webserv/
+Enumerating objects: 9, done.
+Counting objects: 100% (9/9), done.
+Delta compression using up to 12 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (5/5), 535 bytes | 535.00 KiB/s, done.
+Total 5 (delta 4), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (4/4), completed with 4 local objects.
+To http://github.com/Mo0x/webserv
+   a570a09..f51aae1  main -> main
+mgovinda@k1r3p14:~/webserv ‹main›$ make
+make: Nothing to be done for 'all'.
+mgovinda@k1r3p14:~/webserv ‹main›$ make re
+rm -f ./srcs/main.o ./srcs/cfg/Config.o ./srcs/cfg/ConfigLexer.o ./srcs/cfg/ConfigParser.o ./srcs/cgi/Cgi.o ./srcs/server/Chunked.o ./srcs/server/ServerSocket.o ./srcs/server/SocketManager.o ./srcs/server/SocketManagerDelete.o ./srcs/server/SocketManagerError.o ./srcs/server/SocketManagerHttp.o ./srcs/server/SocketManagerPost.o ./srcs/server/Response.o ./srcs/server/MultipartStreamParser.o ./srcs/utils/file_utils.o ./srcs/utils/utils.o
+rm -f ./webserv
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/main.cpp -o srcs/main.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cfg/Config.cpp -o srcs/cfg/Config.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cfg/ConfigLexer.cpp -o srcs/cfg/ConfigLexer.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cfg/ConfigParser.cpp -o srcs/cfg/ConfigParser.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/cgi/Cgi.cpp -o srcs/cgi/Cgi.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/Chunked.cpp -o srcs/server/Chunked.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/ServerSocket.cpp -o srcs/server/ServerSocket.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManager.cpp -o srcs/server/SocketManager.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerDelete.cpp -o srcs/server/SocketManagerDelete.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerError.cpp -o srcs/server/SocketManagerError.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerHttp.cpp -o srcs/server/SocketManagerHttp.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/SocketManagerPost.cpp -o srcs/server/SocketManagerPost.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/Response.cpp -o srcs/server/Response.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/server/MultipartStreamParser.cpp -o srcs/server/MultipartStreamParser.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/utils/file_utils.cpp -o srcs/utils/file_utils.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -c srcs/utils/utils.cpp -o srcs/utils/utils.o
+c++ -g -Wall -Wextra -Werror -std=c++98 -I./includes -I./includes/legacy -o ./webserv ./srcs/main.o ./srcs/cfg/Config.o ./srcs/cfg/ConfigLexer.o ./srcs/cfg/ConfigParser.o ./srcs/cgi/Cgi.o ./srcs/server/Chunked.o ./srcs/server/ServerSocket.o ./srcs/server/SocketManager.o ./srcs/server/SocketManagerDelete.o ./srcs/server/SocketManagerError.o ./srcs/server/SocketManagerHttp.o ./srcs/server/SocketManagerPost.o ./srcs/server/Response.o ./srcs/server/MultipartStreamParser.o ./srcs/utils/file_utils.o ./srcs/utils/utils.o
+mgovinda@k1r3p14:~/webserv ‹main›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=105
+[fd 4] tryReadBody: chunked=0 recv=105 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/env.py?foo=bar&x=42 HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2057111 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=113
+[fd 4] tryReadBody: chunked=0 recv=113 body=0
+[fd 4] parsed request line + headers: GET /cgi-bin/bash_is_here.sh?hello=world HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=0
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=0
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2058994 stdin_w=-1 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/bash_is_here.sh
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=174
+[fd 4] tryReadBody: chunked=0 recv=174 body=0
+[fd 4] parsed request line + headers: POST /cgi-bin/env.py HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [content-length: 12] [content-type: application/x-www-form-urlencoded] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] phase READING_HEADERS -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+[fd 4] phase READING_HEADERS -> SENDING_RESPONSE at setupBodyFramingAndLimits
+[fd 4] enter handleClientRead phase=SENDING_RESPONSE recv=174 body=0
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
+Disconnecting fd 4
+[fd 4] phase READING_HEADERS -> CLOSED at handleClientDisconnect
+^C
+mgovinda@k1r3p14:~/webserv ‹main*›$ ./webserv fulltest.conf
+[DEBUG] Token: 'listen'
+[DEBUG] Token: 'server_name'
+[DEBUG] Token: 'root'
+[DEBUG] Token: 'index'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'error_page'
+[DEBUG] Token: 'max_body_size'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/autoindex/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/upload/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/delete/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: 'index.html'
+[DEBUG] Parsed location path: '/post_only/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/old/'
+[DEBUG] Token: 'location'
+[DEBUG] Parsed location index: ''
+[DEBUG] Parsed location path: '/cgi-bin/'
+Starting WebServer now...
+[DEBUG] socket() returned fd: 3
+[DEBUG] Trying to bind to 0.0.0.0:8080
+[DEBUG] bind() success on fd 3
+[DEBUG] listen() success on fd 3
+Accepted new client: fd 4
+[fd 4] inserted in m_clients, phase=READING_HEADERS
+[fd 4] enter handleClientRead phase=READING_HEADERS recv=0 body=0
+[fd 4] after readIntoBuffer recv=174
+[fd 4] tryReadBody: chunked=0 recv=174 body=0
+[fd 4] parsed request line + headers: POST /cgi-bin/env.py HTTP/1.1 (hdrs=0)
+[fd 4] headers: [accept: */*] [content-length: 12] [content-type: application/x-www-form-urlencoded] [host: 127.0.0.1:8080] [user-agent: curl/7.81.0]
+[fd 4] framing: isChunked=0 contentLength=12
+[fd 4] phase READING_HEADERS -> READY_TO_DISPATCH at finalizeHeaderPhaseTransition
+[fd 4] header->body: phase=READY_TO_DISPATCH recv=0 body=12
+[fd 4] phase READY_TO_DISPATCH -> CGI_RUNNING at startCgiDispatch
+[fd 4] CGI spawned pid=2062388 stdin_w=6 stdout_r=7
+[fd 4] CGI dispatch : wd=./www/cgi-binscript=/home/mgovinda/webserv/www/cgi-bin/env.py
+[fd 4] phase CGI_RUNNING -> SENDING_RESPONSE at finalizeAndQueue
+[fd 4] phase SENDING_RESPONSE -> READING_HEADERS at tryFlushWrite
