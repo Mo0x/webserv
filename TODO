@@ -1,2 +1,1 @@
-1/ replace de define LOG() by std::cerr call log style
 2/ unknown directive fix for return and max_body_size
