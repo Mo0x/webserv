@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/21 17:54:38 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 17:57:12 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -209,6 +209,7 @@ class SocketManager
 	void queueErrorAndClose(int fd, int status, const std::string &title, const std::string &html);
 
 	// Dispatch to handlers
+	void splitPathAndQuery(const std::string &raw, std::string &urlPath, std::string &query);
 	void dispatchRequest(int fd, const Request &req,
 							const ServerConfig &server,
 							const std::string &methodUpper);

@@ -1,1 +1,3 @@
 1/ check if handlePostUploadOrCgi is really used at all ? for the cgi? if not rename
+2/ check if we use errno correctly :  Checking the value of errno to adjust the server behaviour is strictly forbidden
+after performing a read or write operation

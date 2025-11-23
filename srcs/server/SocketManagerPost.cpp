@@ -39,7 +39,7 @@ static std::string httpKeyToCgiVar(const std::string &k)
 }
 
 
-static void splitPathAndQuery(const std::string &raw, std::string &urlPath, std::string &query)
+void SocketManager::splitPathAndQuery(const std::string &raw, std::string &urlPath, std::string &query)
 {
     size_t q = raw.find('?');
     if (q == std::string::npos) { urlPath = raw; query.clear(); }
