@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 18:02:00 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 18:03:20 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1173,18 +1173,19 @@ void SocketManager::handleClientRead(int fd)
 	// 3) Dispatch if ready
 	if (st.phase == ClientState::READY_TO_DISPATCH)
 	{
-		   // BEFORE finalize, resolve the same server/route you already use there:
 		const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[fd]];
-		const RouteConfig  *rt  = findMatchingLocation(srv, st.req.path);
+
+		std::string urlPath;
+		std::string query;
+		splitPathAndQuery(st.req.path, urlPath, query);
+
+		const RouteConfig *rt = findMatchingLocation(srv, urlPath);
 
 		if (rt && tryCgiDispatchNow(fd, st, srv, *rt))
-			return; // CGI matched → phase set to CGI_RUNNING, skip finalize
+			return;
+
 		std::cerr << "[fd " << fd << "] READY_TO_DISPATCH -> finalizeRequestAndQueueResponse" << std::endl;
 		finalizeRequestAndQueueResponse(fd, st);
-		// finalizeRequestAndQueueResponse() should:
-		// - build & queue Response
-		// - set st.phase = SENDING_RESPONSE
-		// - maybe prep keep-alive state
 		return;
 	}
 }
