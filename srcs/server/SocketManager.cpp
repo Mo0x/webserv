@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 15:32:55 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 15:33:36 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -28,9 +28,6 @@
 #include "request_response_struct.hpp"
 #include "utils.hpp"
 
-#ifndef LOG
-#define LOG(...) std::fprintf(stderr, __VA_ARGS__)
-#endif
 
 // ============================ ClientState ====================================
 bool ClientState::mpDone() const
@@ -1667,6 +1664,6 @@ void SocketManager::onPartEndThunk(void* user)
 		cs->mpCtx.fieldName.clear();
 	}
 
-	std::cerr >> "[multipart] part end (count=" << static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u)
+	std::cerr << "[multipart] part end (count=" << static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u)
 	<< "totalBytes=" << static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u) << ")" << std::endl;
 }
