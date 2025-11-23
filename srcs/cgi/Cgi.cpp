@@ -35,59 +35,99 @@ Cgi::Cgi() :
 	workingDir.clear();
 }
 
+
+//Review this black magic
 void SocketManager::checkCgiTimeouts()
 {
 	const unsigned long long now = now_ms();
+	std::vector<int> toTimeout;
 
+	// Pass 1: just collect which FDs timed out
 	for (std::map<int, ClientState>::iterator it = m_clients.begin();
 		 it != m_clients.end(); ++it)
 	{
-		int clientFd = it->first;
+		int          fd = it->first;
 		ClientState &st = it->second;
 
+		// No CGI running → skip
 		if (st.cgi.pid <= 0)
-			continue; // no active CGI
-
-		// (Optional) If you want "idle timeout" instead of "total runtime":
-		// use st.cgi.lastActivityMs and update it whenever you read from CGI.
-
-		const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[clientFd]];
-
-		std::string urlPath, query;
-		splitPathAndQuery(st.req.path, urlPath, query);
-		const RouteConfig *matchedRoute = findMatchingLocation(srv, urlPath);
-		RouteConfig fallbackRoute;
-		const RouteConfig &route = matchedRoute ? *matchedRoute : fallbackRoute;
-
-		size_t timeout_ms = route.cgi_timeout_ms;
-		if (!timeout_ms)
 			continue;
 
-		unsigned long long elapsed = now - st.cgi.tStartMs; // or lastActivityMs
+		// Already parsed CGI headers → we've already sent/started a response,
+		// do NOT try to send a 504 for this one.
+		if (st.cgi.headersParsed)
+			continue;
 
+		// Find route to read cgi_timeout_ms
+		const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[fd]];
+		std::string urlPath, query;
+		splitPathAndQuery(st.req.path, urlPath, query);  // IMPORTANT: strip ?foo=bar
+
+		const RouteConfig *rt = findMatchingLocation(srv, urlPath);
+		size_t timeout_ms = 0;
+		if (rt)
+			timeout_ms = rt->cgi_timeout_ms;
+
+		if (!timeout_ms)
+			continue; // no timeout configured
+
+		unsigned long long elapsed = now - st.cgi.tStartMs;
 		if (elapsed > static_cast<unsigned long long>(timeout_ms))
+			toTimeout.push_back(fd);
+	}
+
+	// Pass 2: act on them
+	for (size_t i = 0; i < toTimeout.size(); ++i)
+	{
+		int fd = toTimeout[i];
+
+		std::map<int, ClientState>::iterator it = m_clients.find(fd);
+		if (it == m_clients.end())
+			continue; // already gone
+
+		ClientState &st = it->second;
+
+		const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[fd]];
+		std::string urlPath, query;
+		splitPathAndQuery(st.req.path, urlPath, query);
+		const RouteConfig *rt = findMatchingLocation(srv, urlPath);
+
+		// 1) Kill CGI process
+		killCgiProcess(st, SIGKILL);
+
+		// 2) Close pipes & remove from poll
+		if (st.cgi.stdin_w != -1)
 		{
-			// Same cleanup as your existing timeout block in drainCgiOutput:
-			killCgiProcess(st, SIGKILL);
-
-			if (st.cgi.stdin_w != -1) {
-				delPollFd(st.cgi.stdin_w);
-				::close(st.cgi.stdin_w);
-				m_cgiStdinToClient.erase(st.cgi.stdin_w);
-				st.cgi.stdin_w = -1;
-				st.cgi.stdin_closed = true;
-			}
-			if (st.cgi.stdout_r != -1) {
-				delPollFd(st.cgi.stdout_r);
-				::close(st.cgi.stdout_r);
-				m_cgiStdoutToClient.erase(st.cgi.stdout_r);
-				st.cgi.stdout_r = -1;
-			}
-
-			Response err = makeHtmlError(504, "Gateway Timeout",
-										 "<h1>504 Gateway Timeout</h1>");
-			finalizeAndQueue(clientFd, st.req, err, false, true);
+			delPollFd(st.cgi.stdin_w);
+			::close(st.cgi.stdin_w);
+			m_cgiStdinToClient.erase(st.cgi.stdin_w);
+			st.cgi.stdin_w  = -1;
+			st.cgi.stdin_closed = true;
 		}
+		if (st.cgi.stdout_r != -1)
+		{
+			delPollFd(st.cgi.stdout_r);
+			::close(st.cgi.stdout_r);
+			m_cgiStdoutToClient.erase(st.cgi.stdout_r);
+			st.cgi.stdout_r = -1;
+		}
+
+		// 3) Queue 504 response
+		Response err;
+		if (rt)
+			err = makeConfigErrorResponse(
+					srv, rt,
+					504, "Gateway Timeout",
+					"<h1>504 Gateway Timeout</h1>");
+		else
+			err = makeHtmlError(
+					504, "Gateway Timeout",
+					"<h1>504 Gateway Timeout</h1>");
+
+		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+
+		// DO NOT call handleClientDisconnect(fd) here.
+		// Let your normal SENDING_RESPONSE/keep-alive logic close it.
 	}
 }
 
@@ -525,7 +565,11 @@ void SocketManager::drainCgiOutput(int clientFd)
 		return;
 
 	const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[clientFd]];
-	const RouteConfig  *matchedRoute  = findMatchingLocation(srv, st.req.path);
+
+	//const RouteConfig  *matchedRoute  = findMatchingLocation(srv, st.req.path);
+	std::string urlPath, query;
+	splitPathAndQuery(st.req.path, urlPath, query);
+	const RouteConfig *matchedRoute = findMatchingLocation(srv, urlPath);
 	RouteConfig fallbackRoute;
 	const RouteConfig &route = matchedRoute ? *matchedRoute : fallbackRoute;
 	const size_t timeout_ms = route.cgi_timeout_ms;

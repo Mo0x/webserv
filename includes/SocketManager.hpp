@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 18:57:54 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 19:01:22 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -273,7 +273,7 @@ class SocketManager
 	void handleCgiWritable(int pipefd);
 	void handleCgiReadable(int pipefd);
 	void handleCgiPipeError(int pipefd);
-	void SocketManager::checkCgiTimeouts(); // new for cgi time out
+	void checkCgiTimeouts(); // new for cgi time out
 };
 
 #endif
