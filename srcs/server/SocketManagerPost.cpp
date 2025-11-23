@@ -217,7 +217,7 @@ void SocketManager::startCgiDispatch(int fd,
 	const std::string scriptFsPath = joinPaths(workingDir, rel);
 
 	// Fill CGI state
-	st.cgi.reset();                      // if you added reset(); else set fields like in your ctor
+	st.cgi.reset();
 	st.cgi.workingDir    = workingDir;
 	st.cgi.scriptFsPath  = scriptFsPath;
 
@@ -365,7 +365,8 @@ void SocketManager::startCgiDispatch(int fd,
 	}
 
 	// ---- Build envp (RFC 3875 core) ----
-	std::vector<std::string> env; env.reserve(64);
+	std::vector<std::string> env;
+	env.reserve(64);
 
 	// 1) URL parts and addresses
 	std::string urlPath, query; splitPathAndQuery(st.req.path, urlPath, query);
@@ -448,7 +449,7 @@ void SocketManager::startCgiDispatch(int fd,
 
 	// exec
 	::execve(argv[0], &argv[0], &envp[0]);
-	_exit(127); // exec failed
+	_exit(127); // exec failed LEGAL ??? TODO CHECK 98 cpp
 	}
 
 	// ---- PARENT ----
