@@ -30,10 +30,10 @@ static std::string httpKeyToCgiVar(const std::string &k)
     std::string r; r.reserve(k.size());
     for (size_t i = 0; i < k.size(); ++i)
     {
-        unsigned char c = (unsigned char)k[i];
-        if (c == '-') r.push_back('_');
-        else if (c >= 'a' && c <= 'z') r.push_back((char)(c - 'a' + 'A'));
-        else r.push_back((char)c);
+	unsigned char c = (unsigned char)k[i];
+	if (c == '-') r.push_back('_');
+	else if (c >= 'a' && c <= 'z') r.push_back((char)(c - 'a' + 'A'));
+	else r.push_back((char)c);
     }
     return r;
 }
@@ -47,9 +47,9 @@ static void splitPathAndQuery(const std::string &raw, std::string &urlPath, std:
 }
 
 static void splitScriptAndPathInfo(const std::string &urlPath,
-                                   const std::map<std::string,std::string> &cgiExtMap,
-                                   std::string &scriptUrlPath,
-                                   std::string &pathInfo)
+				   const std::map<std::string,std::string> &cgiExtMap,
+				   std::string &scriptUrlPath,
+				   std::string &pathInfo)
 {
     scriptUrlPath.clear();
     pathInfo.clear();
@@ -62,14 +62,14 @@ static void splitScriptAndPathInfo(const std::string &urlPath,
     size_t dot = lastComp.rfind('.');
     if (dot != std::string::npos)
     {
-        std::string ext = lastComp.substr(dot); // includes '.'
-        if (cgiExtMap.find(ext) != cgiExtMap.end())
-        {
-            // Script is up to end of this component
-            scriptUrlPath = urlPath;
-            pathInfo.clear(); // no extra after filename in this heuristic
-            return;
-        }
+	std::string ext = lastComp.substr(dot); // includes '.'
+	if (cgiExtMap.find(ext) != cgiExtMap.end())
+	{
+	    // Script is up to end of this component
+	    scriptUrlPath = urlPath;
+	    pathInfo.clear(); // no extra after filename in this heuristic
+	    return;
+	}
     }
 
     // Fallback: no recognized extension in last component.
@@ -79,8 +79,8 @@ static void splitScriptAndPathInfo(const std::string &urlPath,
 }
 
 static void getSocketAddrs(int clientFd,
-                           std::string &remoteAddr, std::string &remotePort,
-                           std::string &serverAddr, std::string &serverPort)
+			   std::string &remoteAddr, std::string &remotePort,
+			   std::string &serverAddr, std::string &serverPort)
 {
     remoteAddr.clear(); remotePort.clear();
     serverAddr.clear(); serverPort.clear();
@@ -88,24 +88,24 @@ static void getSocketAddrs(int clientFd,
     sockaddr_storage peer; socklen_t plen = sizeof(peer);
     if (::getpeername(clientFd, (sockaddr*)&peer, &plen) == 0)
     {
-        char h[NI_MAXHOST]; char s[NI_MAXSERV];
-        if (::getnameinfo((sockaddr*)&peer, plen, h, sizeof(h), s, sizeof(s),
-                          NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-        { remoteAddr = h; remotePort = s; }
+	char h[NI_MAXHOST]; char s[NI_MAXSERV];
+	if (::getnameinfo((sockaddr*)&peer, plen, h, sizeof(h), s, sizeof(s),
+			  NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+	{ remoteAddr = h; remotePort = s; }
     }
 
     sockaddr_storage self; socklen_t slen = sizeof(self);
     if (::getsockname(clientFd, (sockaddr*)&self, &slen) == 0)
     {
-        char h[NI_MAXHOST]; char s[NI_MAXSERV];
-        if (::getnameinfo((sockaddr*)&self, slen, h, sizeof(h), s, sizeof(s),
-                          NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-        { serverAddr = h; serverPort = s; }
+	char h[NI_MAXHOST]; char s[NI_MAXSERV];
+	if (::getnameinfo((sockaddr*)&self, slen, h, sizeof(h), s, sizeof(s),
+			  NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+	{ serverAddr = h; serverPort = s; }
     }
 }
 
 static std::string makeScriptName(const std::string &routePrefix,
-                                  const std::string &scriptUrlPath)
+				  const std::string &scriptUrlPath)
 {
 	(void)routePrefix;
     if (scriptUrlPath.empty()) return "/";
@@ -204,9 +204,9 @@ static std::string makeUploadFileName(const std::string &hint)
 //TODO review this FUNCTIOn !!! Understand
 
 void SocketManager::startCgiDispatch(int fd,
-                                     ClientState &st,
-                                     const ServerConfig &server,
-                                     const RouteConfig &route)
+				     ClientState &st,
+				     const ServerConfig &server,
+				     const RouteConfig &route)
 {
 	// Decide working directory: prefer cgi_path, else route.root, else server.root
 	std::string workingDir = !route.cgi_path.empty() ? route.cgi_path
@@ -257,82 +257,82 @@ void SocketManager::startCgiDispatch(int fd,
 
 	// Resolve the script path securely before spawning
 	char realBuf[PATH_MAX];
-        if (!::realpath(st.cgi.scriptFsPath.c_str(), realBuf))
-        {
-                Response res;
-                if (errno == ENOENT || errno == ENOTDIR)
-                        res = makeConfigErrorResponse(server, &route, 404, "Not Found", "<h1>404 Not Found</h1><p>CGI script not found.</p>");
-                else
-                        res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>Failed to resolve CGI script.</p>");
-                finalizeAndQueue(fd, st.req, res, false, true);
-                return;
-        }
-        std::string absScript(realBuf);
-        if (!isPathSafe(workingDir, absScript))
-        {
-                Response res = makeConfigErrorResponse(server, &route, 403, "Forbidden", "<h1>403 Forbidden</h1><p>CGI script outside root.</p>");
-                finalizeAndQueue(fd, st.req, res, false, true);
-                return;
-        }
-        struct stat sb;
-        if (::stat(absScript.c_str(), &sb) != 0)
-        {
-                Response res = makeConfigErrorResponse(server, &route, 404, "Not Found", "<h1>404 Not Found</h1><p>CGI script missing.</p>");
-                finalizeAndQueue(fd, st.req, res, false, true);
-                return;
-        }
-        if (!S_ISREG(sb.st_mode))
-        {
-                Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script is not a regular file.</p>");
-                finalizeAndQueue(fd, st.req, res, false, true);
-                return;
-        }
-        if (::access(absScript.c_str(), R_OK) != 0)
-        {
-                Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not readable.</p>");
-                finalizeAndQueue(fd, st.req, res, false, true);
-                return;
-        }
-        if (hasInterpreter)
-        {
-                struct stat ist;
-                if (::stat(interpreterPath.c_str(), &ist) != 0 || !S_ISREG(ist.st_mode) || ::access(interpreterPath.c_str(), X_OK) != 0)
-                {
-                        Response res = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>Interpreter not found or not executable.</p>");
-                        finalizeAndQueue(fd, st.req, res, false, true);
-                        return;
-                }
-        }
-        else
-        {
-                bool canExec = (::access(absScript.c_str(), X_OK) == 0);
-                if (!canExec && !fileHasShebang(absScript))
-                {
-                        Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not executable.</p>");
-                        finalizeAndQueue(fd, st.req, res, false, true);
-                        return;
-                }
-        }
+	if (!::realpath(st.cgi.scriptFsPath.c_str(), realBuf))
+	{
+		Response res;
+		if (errno == ENOENT || errno == ENOTDIR)
+			res = makeConfigErrorResponse(server, &route, 404, "Not Found", "<h1>404 Not Found</h1><p>CGI script not found.</p>");
+		else
+			res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>Failed to resolve CGI script.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	std::string absScript(realBuf);
+	if (!isPathSafe(workingDir, absScript))
+	{
+		Response res = makeConfigErrorResponse(server, &route, 403, "Forbidden", "<h1>403 Forbidden</h1><p>CGI script outside root.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	struct stat sb;
+	if (::stat(absScript.c_str(), &sb) != 0)
+	{
+		Response res = makeConfigErrorResponse(server, &route, 404, "Not Found", "<h1>404 Not Found</h1><p>CGI script missing.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	if (!S_ISREG(sb.st_mode))
+	{
+		Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script is not a regular file.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	if (::access(absScript.c_str(), R_OK) != 0)
+	{
+		Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not readable.</p>");
+		finalizeAndQueue(fd, st.req, res, false, true);
+		return;
+	}
+	if (hasInterpreter)
+	{
+		struct stat ist;
+		if (::stat(interpreterPath.c_str(), &ist) != 0 || !S_ISREG(ist.st_mode) || ::access(interpreterPath.c_str(), X_OK) != 0)
+		{
+			Response res = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>Interpreter not found or not executable.</p>");
+			finalizeAndQueue(fd, st.req, res, false, true);
+			return;
+		}
+	}
+	else
+	{
+		bool canExec = (::access(absScript.c_str(), X_OK) == 0);
+		if (!canExec && !fileHasShebang(absScript))
+		{
+			Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script not executable.</p>");
+			finalizeAndQueue(fd, st.req, res, false, true);
+			return;
+		}
+	}
 	st.cgi.scriptFsPath = absScript;
 
-        // ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
-        int inPipe[2], outPipe[2];
-        if (::pipe(inPipe)  < 0 || ::pipe(outPipe) < 0) {
-                Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>pipe() failed.</p>");
-                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-                return;
-        }
+	// ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
+	int inPipe[2], outPipe[2];
+	if (::pipe(inPipe)  < 0 || ::pipe(outPipe) < 0) {
+		Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>pipe() failed.</p>");
+		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+		return;
+	}
 	int fl;
 	fl = fcntl(inPipe[1], F_GETFL, 0);  if (fl != -1) fcntl(inPipe[1], F_SETFL, fl | O_NONBLOCK);
 	fl = fcntl(outPipe[0], F_GETFL, 0); if (fl != -1) fcntl(outPipe[0], F_SETFL, fl | O_NONBLOCK);
-        pid_t pid = ::fork();
-        if (pid < 0) {
-                ::close(inPipe[0]); ::close(inPipe[1]);
-                ::close(outPipe[0]); ::close(outPipe[1]);
-                Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>fork() failed.</p>");
-                finalizeAndQueue(fd, st.req, err, false, true);
-                return;
-        }
+	pid_t pid = ::fork();
+	if (pid < 0) {
+		::close(inPipe[0]); ::close(inPipe[1]);
+		::close(outPipe[0]); ::close(outPipe[1]);
+		Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>fork() failed.</p>");
+		finalizeAndQueue(fd, st.req, err, false, true);
+		return;
+	}
 
 	if (pid == 0) {
 		// ---- CHILD ----
@@ -352,103 +352,103 @@ void SocketManager::startCgiDispatch(int fd,
 		// chdir to working dir
 		if (!st.cgi.workingDir.empty()) ::chdir(st.cgi.workingDir.c_str());
 
-        // ---- Build argv (use FS extension, not URL) ----
-        std::vector<char*> argv;
-        {
-                if (hasInterpreter) {
-                        argv.push_back(const_cast<char*>(interpreterPath.c_str()));          // interpreter
-                        argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // script
-                } else {
-                        argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // direct exec (shebang)
-                }
-                argv.push_back(NULL);
-        }
+	// ---- Build argv (use FS extension, not URL) ----
+	std::vector<char*> argv;
+	{
+		if (hasInterpreter) {
+			argv.push_back(const_cast<char*>(interpreterPath.c_str()));          // interpreter
+			argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // script
+		} else {
+			argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // direct exec (shebang)
+		}
+		argv.push_back(NULL);
+	}
 
-        // ---- Build envp (RFC 3875 core) ----
-        std::vector<std::string> env; env.reserve(64);
+	// ---- Build envp (RFC 3875 core) ----
+	std::vector<std::string> env; env.reserve(64);
 
-        // 1) URL parts and addresses
-        std::string urlPath, query; splitPathAndQuery(st.req.path, urlPath, query);
-        std::string remoteAddr, remotePort, serverAddr, serverPort;
-        getSocketAddrs(fd, remoteAddr, remotePort, serverAddr, serverPort);
+	// 1) URL parts and addresses
+	std::string urlPath, query; splitPathAndQuery(st.req.path, urlPath, query);
+	std::string remoteAddr, remotePort, serverAddr, serverPort;
+	getSocketAddrs(fd, remoteAddr, remotePort, serverAddr, serverPort);
 
-        // SERVER_NAME/PORT (prefer Host header if present)
-        std::string hostHeader;
-        { std::map<std::string,std::string>::const_iterator itH=st.req.headers.find("host");
-          if (itH!=st.req.headers.end()) hostHeader=itH->second; }
-        std::string serverName = server.server_name.empty() ? serverAddr : server.server_name;
-        std::string serverPortStr = serverPort;
-        if (!hostHeader.empty()) {
-                std::string h = hostHeader;
-                while(!h.empty()&&(h[0]==' '||h[0]=='\t')) h.erase(0,1);
-                while(!h.empty()&&(h[h.size()-1]==' '||h[h.size()-1]=='\t')) h.erase(h.size()-1);
-                size_t c=h.rfind(':');
-                if (c!=std::string::npos) { serverName=h.substr(0,c); serverPortStr=h.substr(c+1); }
-                else serverName=h;
-        }
+	// SERVER_NAME/PORT (prefer Host header if present)
+	std::string hostHeader;
+	{ std::map<std::string,std::string>::const_iterator itH=st.req.headers.find("host");
+	  if (itH!=st.req.headers.end()) hostHeader=itH->second; }
+	std::string serverName = server.server_name.empty() ? serverAddr : server.server_name;
+	std::string serverPortStr = serverPort;
+	if (!hostHeader.empty()) {
+		std::string h = hostHeader;
+		while(!h.empty()&&(h[0]==' '||h[0]=='\t')) h.erase(0,1);
+		while(!h.empty()&&(h[h.size()-1]==' '||h[h.size()-1]=='\t')) h.erase(h.size()-1);
+		size_t c=h.rfind(':');
+		if (c!=std::string::npos) { serverName=h.substr(0,c); serverPortStr=h.substr(c+1); }
+		else serverName=h;
+	}
 
-        // 2) Core vars
-        env.push_back("GATEWAY_INTERFACE=CGI/1.1");
-        env.push_back("REQUEST_METHOD="+st.req.method);
-        env.push_back("SERVER_PROTOCOL="+st.req.http_version);
-        env.push_back("SERVER_SOFTWARE=webserv/0.1");
-        env.push_back("SERVER_NAME="+serverName);
-        env.push_back("SERVER_PORT="+serverPortStr);
+	// 2) Core vars
+	env.push_back("GATEWAY_INTERFACE=CGI/1.1");
+	env.push_back("REQUEST_METHOD="+st.req.method);
+	env.push_back("SERVER_PROTOCOL="+st.req.http_version);
+	env.push_back("SERVER_SOFTWARE=webserv/0.1");
+	env.push_back("SERVER_NAME="+serverName);
+	env.push_back("SERVER_PORT="+serverPortStr);
 
-        // SCRIPT fields
-        env.push_back("SCRIPT_FILENAME="+st.cgi.scriptFsPath);
+	// SCRIPT fields
+	env.push_back("SCRIPT_FILENAME="+st.cgi.scriptFsPath);
 		std::string scriptUrlPath, pathInfo;
 		splitScriptAndPathInfo(urlPath, route.cgi_extension, scriptUrlPath, pathInfo);
 
 		env.push_back("SCRIPT_NAME=" + makeScriptName(route.path, scriptUrlPath));
 		if (!pathInfo.empty()) env.push_back("PATH_INFO=" + pathInfo);
 
-        // REQUEST_URI & QUERY_STRING
-        env.push_back("REQUEST_URI="+urlPath+(query.empty()?"":"?"+query));
-        env.push_back("QUERY_STRING="+query);
+	// REQUEST_URI & QUERY_STRING
+	env.push_back("REQUEST_URI="+urlPath+(query.empty()?"":"?"+query));
+	env.push_back("QUERY_STRING="+query);
 
-        // Document root (optional)
-        {
-                std::string docroot = !route.root.empty() ? route.root : server.root;
-                if (!docroot.empty()) env.push_back("DOCUMENT_ROOT="+docroot);
-        }
+	// Document root (optional)
+	{
+		std::string docroot = !route.root.empty() ? route.root : server.root;
+		if (!docroot.empty()) env.push_back("DOCUMENT_ROOT="+docroot);
+	}
 
-        // Client info
-        if (!remoteAddr.empty()) env.push_back("REMOTE_ADDR="+remoteAddr);
-        if (!remotePort.empty()) env.push_back("REMOTE_PORT="+remotePort);
+	// Client info
+	if (!remoteAddr.empty()) env.push_back("REMOTE_ADDR="+remoteAddr);
+	if (!remotePort.empty()) env.push_back("REMOTE_PORT="+remotePort);
 
-        // CONTENT_* (use actual stdin size we feed)
-        if (!st.cgi.inBuf.empty()){
-                std::ostringstream oss; oss<<st.cgi.inBuf.size();
-                env.push_back("CONTENT_LENGTH="+oss.str());
-        }
-        { std::map<std::string,std::string>::const_iterator itCT=st.req.headers.find("content-type");
-          if (itCT!=st.req.headers.end()) env.push_back("CONTENT_TYPE="+itCT->second); }
+	// CONTENT_* (use actual stdin size we feed)
+	if (!st.cgi.inBuf.empty()){
+		std::ostringstream oss; oss<<st.cgi.inBuf.size();
+		env.push_back("CONTENT_LENGTH="+oss.str());
+	}
+	{ std::map<std::string,std::string>::const_iterator itCT=st.req.headers.find("content-type");
+	  if (itCT!=st.req.headers.end()) env.push_back("CONTENT_TYPE="+itCT->second); }
 
-        // HTTP_* for all other headers
-        for (std::map<std::string,std::string>::const_iterator it=st.req.headers.begin();
-             it!=st.req.headers.end(); ++it)
-        {
-                const std::string &k = it->first;
-                if (k=="content-type" || k=="content-length") continue;
-                env.push_back("HTTP_"+httpKeyToCgiVar(k)+"="+it->second);
-        }
+	// HTTP_* for all other headers
+	for (std::map<std::string,std::string>::const_iterator it=st.req.headers.begin();
+	     it!=st.req.headers.end(); ++it)
+	{
+		const std::string &k = it->first;
+		if (k=="content-type" || k=="content-length") continue;
+		env.push_back("HTTP_"+httpKeyToCgiVar(k)+"="+it->second);
+	}
 
-        // Honor cgi_pass_env
-        for (size_t i=0;i<route.cgi_pass_env.size();++i){
-                const std::string &key = route.cgi_pass_env[i];
-                const char* v = std::getenv(key.c_str());
-                if (v && *v) env.push_back(key+"="+std::string(v));
-        }
+	// Honor cgi_pass_env
+	for (size_t i=0;i<route.cgi_pass_env.size();++i){
+		const std::string &key = route.cgi_pass_env[i];
+		const char* v = std::getenv(key.c_str());
+		if (v && *v) env.push_back(key+"="+std::string(v));
+	}
 
-        // Convert to char*[]
-        std::vector<char*> envp; envp.reserve(env.size()+1);
-        for (size_t i=0;i<env.size();++i) envp.push_back(const_cast<char*>(env[i].c_str()));
-        envp.push_back(NULL);
+	// Convert to char*[]
+	std::vector<char*> envp; envp.reserve(env.size()+1);
+	for (size_t i=0;i<env.size();++i) envp.push_back(const_cast<char*>(env[i].c_str()));
+	envp.push_back(NULL);
 
-        // exec
-        ::execve(argv[0], &argv[0], &envp[0]);
-        _exit(127); // exec failed
+	// exec
+	::execve(argv[0], &argv[0], &envp[0]);
+	_exit(127); // exec failed
 	}
 
 	// ---- PARENT ----
@@ -490,35 +490,35 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 									const RouteConfig *route,
 									const std::string &body)
 {
-	    (void)server; // unused for now; kept for future CGI/env or policy checks 
-        if (route && !route->upload_path.empty())
-        {
-                const std::string &dir = route->upload_path;
-                //dir must exist
-                if (!dirExists(dir))
-                {
-                        Response res = makeConfigErrorResponse(server, route, 409, "Conflict",  "<h1>409 Conflict</h1><p>Upload directory missing.</p>");
-                        finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
-                        return;
-                }
-                //building a safe absolute path within upload dir
-                std::string fname = makeUploadFileName(req.path);
-                std::string full = joinPath(dir, fname);
-                if (!isPathSafe(dir,full))
-                {
-                        Response res = makeConfigErrorResponse(server, route, 403, "Forbidden", "<h1>403 Forbidden</h1>");
-                        finalizeAndQueue(fd, req, res, false, true);
-                        return ;
-                }
-                // writefile
-                std::ofstream ofs(full.c_str(), std::ios::out | std::ios:: binary | std::ios::trunc);
-                if (!ofs)
-                {
-                        Response res = makeConfigErrorResponse(server, route, 500, "Internal Server Error",
-                                                                                "<h1>500 Internal Server Error</h1>");
-                        finalizeAndQueue(fd, req, res, false, true);
-                        return;
-                }
+	(void)server; // unused for now; kept for future CGI/env or policy checks 
+	if (route && !route->upload_path.empty())
+	{
+		const std::string &dir = route->upload_path;
+		//dir must exist
+		if (!dirExists(dir))
+		{
+			Response res = makeConfigErrorResponse(server, route, 409, "Conflict",  "<h1>409 Conflict</h1><p>Upload directory missing.</p>");
+			finalizeAndQueue(fd, req, res, /*body_expected=*/false, /*body_fully_consumed=*/true);
+			return;
+		}
+		//building a safe absolute path within upload dir
+		std::string fname = makeUploadFileName(req.path);
+		std::string full = joinPath(dir, fname);
+		if (!isPathSafe(dir,full))
+		{
+			Response res = makeConfigErrorResponse(server, route, 403, "Forbidden", "<h1>403 Forbidden</h1>");
+			finalizeAndQueue(fd, req, res, false, true);
+			return ;
+		}
+		// writefile
+		std::ofstream ofs(full.c_str(), std::ios::out | std::ios:: binary | std::ios::trunc);
+		if (!ofs)
+		{
+			Response res = makeConfigErrorResponse(server, route, 500, "Internal Server Error",
+										"<h1>500 Internal Server Error</h1>");
+			finalizeAndQueue(fd, req, res, false, true);
+			return;
+		}
 		if (!body.empty())
 			ofs.write(&body[0], static_cast<std::streamsize>(body.size()));
 		ofs.close();
@@ -541,10 +541,10 @@ void SocketManager::handlePostUploadOrCgi(int fd,
 	//     return;
 	// }
 
-        // 3) Nothing to do for POST on this route
-        {
-                Response res = makeConfigErrorResponse(server, route, 404, "Not Found",
-                                                                        "<h1>404 Not Found</h1><p>No upload or CGI here.</p>");
-                finalizeAndQueue(fd, req, res, false, true);
-        }
+	// 3) Nothing to do for POST on this route
+	{
+		Response res = makeConfigErrorResponse(server, route, 404, "Not Found",
+									"<h1>404 Not Found</h1><p>No upload or CGI here.</p>");
+		finalizeAndQueue(fd, req, res, false, true);
+	}
 }

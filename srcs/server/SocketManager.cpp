@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 15:33:36 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/23 16:03:47 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -803,6 +803,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 			size_t consumed = 0;
 			if (!st.recvBuffer.empty())
 			{
+				//~size_t(0) == clever trick to populate a size_t full of ones
 				const size_t max_allowed = (st.maxBodyAllowed ? st.maxBodyAllowed : ~size_t(0));
 				consumed = st.chunkDec.feed(st.recvBuffer.data(),
 											st.recvBuffer.size(),
@@ -1651,7 +1652,7 @@ void SocketManager::onPartEndThunk(void* user)
 		else if (!cs->mpCtx.currentFilePath.empty())
 		{
 			cs->mpCtx.savedNames.push_back(cs->mpCtx.currentFilePath);
-			std::cerr << "[multipart] saved "cs->mpCtx.currentFilePath.c_str()) << std::endl;
+			std::cerr << "[multipart] saved " << cs->mpCtx.currentFilePath.c_str() << std::endl;
 		}
 		cs->mpCtx.currentFilePath.clear();
 		cs->mpCtx.writingFile = false;
