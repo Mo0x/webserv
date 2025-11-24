@@ -283,59 +283,6 @@ void SocketManager::handleCgiReadable(int pipefd)
 		drainCgiOutput(clientFd);
 	}
 }
-/* void SocketManager::handleCgiReadable(int pipefd)
-{
-	std::map<int,int>::iterator it = m_cgiStdoutToClient.find(pipefd);
-	if (it == m_cgiStdoutToClient.end()) return;
-	int clientFd = it->second;
-
-	ClientState &st = m_clients[clientFd];
-	char buf[4096];
-
-	bool gotData = false;
-
-	for (;;)
-	{
-		ssize_t n = ::read(pipefd, buf, sizeof(buf));
-		if (n > 0)
-		{
-			st.cgi.outBuf.append(buf, static_cast<size_t>(n));
-			gotData = true;                    // let drainCgiOutput handle counters
-			continue;                          // try to coalesce more bytes this tick
-		}
-		else if (n == 0)
-		{
-			// EOF on CGI stdout
-			::close(pipefd);
-			st.cgi.stdout_r = -1;
-			delPollFd(pipefd);
-			m_cgiStdoutToClient.erase(it);
-
-			// Final drain to parse headers (if not yet) and finish body/close logic
-			drainCgiOutput(clientFd);
-			break;
-		}
-		else
-		{
-			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-				break;                          // nothing more right now
-
-			// hard error -> close pipe, stop polling
-			::close(pipefd);
-			st.cgi.stdout_r = -1;
-			delPollFd(pipefd);
-			m_cgiStdoutToClient.erase(it);
-
-			// Try to complete with whatever we buffered
-			drainCgiOutput(clientFd);
-			break;
-		}
-	}
-
-	if (gotData)
-		drainCgiOutput(clientFd);               // parse headers / push body / enforce caps
-} */
-
 
 void SocketManager::handleCgiPipeError(int pipefd)
 {
