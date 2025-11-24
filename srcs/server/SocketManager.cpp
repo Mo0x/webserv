@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 19:10:26 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 19:21:22 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -749,15 +749,15 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 					st.recvBuffer.erase(0, consumed);
 			}
 
-						const size_t before = st.bodyBuffer.size();
-						st.chunkDec.drainTo(st.bodyBuffer);
-						const size_t drained = st.bodyBuffer.size() - before;
+			const size_t before = st.bodyBuffer.size();
+			st.chunkDec.drainTo(st.bodyBuffer);
+			const size_t drained = st.bodyBuffer.size() - before;
 
-						std::cerr << "[fd " << fd << "] chunked step: consumed=" << consumed
-								  << " drained=" << drained
-								  << " done=" << (st.chunkDec.done() ? 1 : 0)
-								  << " recv=" << st.recvBuffer.size()
-								  << " body=" << st.bodyBuffer.size() << std::endl;
+			std::cerr << "[fd " << fd << "] chunked step: consumed=" << consumed
+						<< " drained=" << drained
+						<< " done=" << (st.chunkDec.done() ? 1 : 0)
+						<< " recv=" << st.recvBuffer.size()
+						<< " body=" << st.bodyBuffer.size() << std::endl;
 
 			if (st.isMultipart && drained > 0)
 			{
@@ -766,26 +766,24 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 					return false;
 				st.bodyBuffer.resize(before);
 			}
-						else if (!st.isMultipart && st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
-						{
-								st.closing = true;
-								st.recvBuffer.clear();
+			else if (!st.isMultipart && st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+			{
+				st.closing = true;
+				st.recvBuffer.clear();
 #ifdef SHUT_RD
-								::shutdown(fd, SHUT_RD);
+				::shutdown(fd, SHUT_RD);
 #endif
-								const ServerConfig &srv = findServerForClient(fd);
-								const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-								Response err = makeConfigErrorResponse(
-										srv,
-										rt,
-										413,
-										"Payload Too Large",
-										"<h1>413 Payload Too Large</h1>"
-								);
-								finalizeAndQueue(fd, st.req, err, false, true);
-								setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-								return false;
-						}
+				const ServerConfig &srv = findServerForClient(fd);
+				const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+				Response err = makeConfigErrorResponse(srv,
+														rt,
+														413,
+														"Payload Too Large",
+														"<h1>413 Payload Too Large</h1>");
+				finalizeAndQueue(fd, st.req, err, false, true);
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+				return false;
+			}
 
 			if (st.chunkDec.hasError())
 			{
@@ -796,37 +794,36 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				return false;
 			}
 
-						if (st.chunkDec.done())
-						{
-							if (st.isMultipart && !st.mpDone())
-							{
-											const ServerConfig &srv = findServerForClient(fd);
-											const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-											Response err = makeConfigErrorResponse(
-															srv,
-															rt,
-															400,
-															"Bad Request",
-															"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>"
-											);
-											finalizeAndQueue(fd, st.req, err, false, true);
-											setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-											return false;
-							}
-							setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
-							return true;
-						}
+			if (st.chunkDec.done())
+			{
+				if (st.isMultipart && !st.mpDone())
+				{
+					const ServerConfig &srv = findServerForClient(fd);
+					const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+					Response err = makeConfigErrorResponse(
+									srv,
+									rt,
+									400,
+									"Bad Request",
+									"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>"
+					);
+					finalizeAndQueue(fd, st.req, err, false, true);
+					setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+					return false;
+				}
+				setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+				return true;
+			}
 
 			// No progress this tick → wait for more bytes.
-						if (consumed == 0 && drained == 0)
-						{
-								std::cerr << "[fd " << fd << "] chunked step: no progress, waiting for more" << std::endl;
-								return false;
-						}
-			// else loop again (we made progress)
+			if (consumed == 0 && drained == 0)
+			{
+					std::cerr << "[fd " << fd << "] chunked step: no progress, waiting for more" << std::endl;
+					return false;
+			}
+			// else loop again (we made progress) no need to code it
 		}
 	}
-
 	// No chunked TE: read exactly st.contentLength bytes into bodyBuffer
 	const size_t want = st.contentLength;
 								const size_t haveNow = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
@@ -857,21 +854,21 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 				st.bodyBuffer.append(st.recvBuffer.data(), take);
 				st.recvBuffer.erase(0, take);
 
-								if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
-								{
-										const ServerConfig &srv = findServerForClient(fd);
-										const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-										Response err = makeConfigErrorResponse(
-												srv,
-												rt,
-												413,
-												"Payload Too Large",
-												"<h1>413 Payload Too Large</h1>"
-										);
-										finalizeAndQueue(fd, st.req, err, false, true);
-										setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-										return false;
-								}
+				if (st.maxBodyAllowed > 0 && st.bodyBuffer.size() > st.maxBodyAllowed)
+				{
+						const ServerConfig &srv = findServerForClient(fd);
+						const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+						Response err = makeConfigErrorResponse(
+								srv,
+								rt,
+								413,
+								"Payload Too Large",
+								"<h1>413 Payload Too Large</h1>"
+						);
+						finalizeAndQueue(fd, st.req, err, false, true);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+						return false;
+				}
 			}
 		}
 	}
@@ -883,24 +880,24 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	const size_t haveTotal = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
 		if (haveTotal >= want)
 		{
-								if (st.isMultipart && !st.mpDone())
-								{
-												const ServerConfig &srv = findServerForClient(fd);
-												const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-												Response err = makeConfigErrorResponse(
-																srv,
-																rt,
-																400,
-																"Bad Request",
-																"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>"
-												);
-												finalizeAndQueue(fd, st.req, err, false, true);
-												setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-												return false;
-								}
-				// Body complete — any remaining st.recvBuffer is pipelined next request
-				setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
-				return true;
+			if (st.isMultipart && !st.mpDone())
+			{
+							const ServerConfig &srv = findServerForClient(fd);
+							const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+							Response err = makeConfigErrorResponse(
+											srv,
+											rt,
+											400,
+											"Bad Request",
+											"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>"
+							);
+							finalizeAndQueue(fd, st.req, err, false, true);
+							setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+							return false;
+			}
+			// Body complete — any remaining st.recvBuffer is pipelined next request
+			setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+			return true;
 		}
 	// Need more bytes
 	return false;
