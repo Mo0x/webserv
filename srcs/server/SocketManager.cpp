@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 19:21:22 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 19:24:47 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -787,6 +787,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
 			if (st.chunkDec.hasError())
 			{
+				// makeHTML ? perhaps makeConfigErrorReponse need to check
 				Response err = makeHtmlError(400, "Bad Request",
 											"<h1>400 Bad Request</h1><p>Malformed chunked body.</p>");
 				finalizeAndQueue(fd, st.req, err, false, true);
@@ -1304,7 +1305,6 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	if (it != req.headers.end())
 		connVal = toLowerCopy(trimCopy(it->second));  // normalize value
 
-	// Split on comma; check first token only (common clients send "close" or "keep-alive")
 	size_t comma = connVal.find(',');
 	if (comma != std::string::npos)
 		connVal.erase(comma); // keep first token
@@ -1315,7 +1315,6 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	if (is10)
 		return (connVal != "keep-alive");          // HTTP/1.0: close unless explicitly keep-alive
 
-	// Unknown/other versions: be safe and close
 	return true;
 }
 
