@@ -125,22 +125,28 @@ ServerConfig ConfigParser::parseServerBlock(const std::vector<Token>& tokens, si
 
 		if (directive == "listen")
 		{
-			if (current >= tokens.size()) throw std::runtime_error("Missing value for 'listen'");
-			std::string listenValue = tokens[current++].value;
+			if (current >= tokens.size())
+				throw std::runtime_error("Missing value for 'listen'");
 
-			size_t colon = listenValue.find(':');
+			std::string combined;
+			while (current < tokens.size() && tokens[current].value != ";")
+			{
+				combined += tokens[current].value;
+				current++;
+			}
+			if (current >= tokens.size() || tokens[current].value != ";")
+				throw std::runtime_error("Expected ';' after 'listen'");
+			current++;
+			size_t colon = combined.find(':');
 			if (colon != std::string::npos)
 			{
-				server.host = listenValue.substr(0, colon);
-				server.port = std::atoi(listenValue.c_str() + colon + 1);
+				server.host = combined.substr(0, colon);
+				server.port = std::atoi(combined.c_str() + colon + 1);
 			}
 			else
 			{
-				server.port = std::atoi(listenValue.c_str());
+				server.port = std::atoi(combined.c_str());
 			}
-
-			if (tokens[current++].value != ";")
-				throw std::runtime_error("Expected ';' after 'listen'");
 		}
 		else if (directive == "server_name")
 		{

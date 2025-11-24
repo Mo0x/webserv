@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 20:23:32 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 18:08:19 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -378,48 +378,60 @@ void SocketManager::run()
 
 	for (;;)
 	{
-		// C++98-safe pointer for poll()
 		struct pollfd* pbase = m_pollfds.empty() ? NULL : &m_pollfds[0];
 		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), 100); // changed from -1 to 100 for the time out
-		if (rc < 0) {
+		if (rc < 0) 
+		{
 			if (errno == EINTR) continue;
 			std::cerr << "poll() error: " << std::strerror(errno) << std::endl;
 			continue;
 		}
-
-		// Snapshot (fd, revents) so handlers can mutate m_pollfds safely
 		std::vector< std::pair<int, short> > events;
 		events.reserve(m_pollfds.size());
-		for (size_t i = 0; i < m_pollfds.size(); ++i) {
+		for (size_t i = 0; i < m_pollfds.size(); ++i) 
+		{
 			if (m_pollfds[i].revents != 0)
 				events.push_back(std::make_pair(m_pollfds[i].fd, m_pollfds[i].revents));
 		}
-
-		// Drive events (separate tests so POLLIN+POLLOUT both handled)
-		for (size_t i = 0; i < events.size(); ++i) {
+		// event driver
+		for (size_t i = 0; i < events.size(); ++i)
+		{
 			int   fd      = events[i].first;
 			short revents = events[i].second;
 
-			if (revents & POLLIN) {
-				if (isListeningSocket(fd)) {
+			if (revents & POLLIN) 
+			{
+				if (isListeningSocket(fd)) 
+				{
 					handleNewConnection(fd);
-				} else if (isCgiStdout(fd)) {
+				} 
+				else if (isCgiStdout(fd)) 
+				{
 					handleCgiReadable(fd);
-				} else {
+				} 
+				else 
+				{
 					handleClientRead(fd);
 				}
 			}
-			if (revents & POLLOUT) {
-				if (isCgiStdin(fd)) {
+			if (revents & POLLOUT) 
+			{
+				if (isCgiStdin(fd)) 
+				{
 					handleCgiWritable(fd);
-				} else {
+				} else 
+				{
 					handleClientWrite(fd);
 				}
 			}
-			if (revents & (POLLERR | POLLHUP | POLLNVAL)) {
-				if (isCgiStdout(fd) || isCgiStdin(fd)) {
+			if (revents & (POLLERR | POLLHUP | POLLNVAL)) 
+			{
+				if (isCgiStdout(fd) || isCgiStdin(fd)) 
+				{
 					handleCgiPipeError(fd);
-				} else {
+				}
+				else
+				{
 					handleClientDisconnect(fd);
 				}
 			}

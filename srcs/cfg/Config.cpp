@@ -1,7 +1,7 @@
 #include "Config.hpp"
 
 ServerConfig::ServerConfig () :
-	host("0.0.0.0"), port(80), client_max_body_size(1000000)
+	host("127.0.0.1"), port(8080), client_max_body_size(1000000)
 {
 	return ;
 }

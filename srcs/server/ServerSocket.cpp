@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/10/10 19:45:49 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 18:11:07 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,6 +31,7 @@
 ServerSocket::ServerSocket() :
 	m_fd(-1), m_port(0), m_host("127.0.0.1")
 {
+    std::cerr << "default used !!!!!!" << std::endl;
 	return ;
 }
 
