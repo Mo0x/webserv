@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 18:11:07 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 18:51:37 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,7 +26,9 @@
 #include <netdb.h> // getaddrinfo, addrinfo, gai_strerror
 #include <iostream>
 #include <cstdio>
+#include <csignal> // for clean shutdown when ctrl+c
 // Setup: socket() → fcntl() → setsockopt() → getaddrinfo() → bind() → listen()
+
 
 ServerSocket::ServerSocket() :
 	m_fd(-1), m_port(0), m_host("127.0.0.1")

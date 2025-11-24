@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 18:08:19 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 18:59:41 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -27,8 +27,10 @@
 #include "file_utils.hpp"
 #include "request_response_struct.hpp"
 #include "utils.hpp"
+#include <csignal> // for clean shutdown when ctrl+c
 
 
+extern volatile sig_atomic_t g_stop;
 // ============================ ClientState ====================================
 bool ClientState::mpDone() const
 {
@@ -376,16 +378,27 @@ void SocketManager::run()
 {
 	initPoll();
 
-	for (;;)
+	while (!g_stop)
 	{
 		struct pollfd* pbase = m_pollfds.empty() ? NULL : &m_pollfds[0];
 		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), 100); // changed from -1 to 100 for the time out
 		if (rc < 0) 
 		{
-			if (errno == EINTR) continue;
+			if (errno == EINTR) 
+			{
+				if (g_stop)
+					break;
+				continue;
+			}
 			std::cerr << "poll() error: " << std::strerror(errno) << std::endl;
 			continue;
 		}
+		if (rc == 0)
+		{
+			checkCgiTimeouts();
+			continue;
+		}
+
 		std::vector< std::pair<int, short> > events;
 		events.reserve(m_pollfds.size());
 		for (size_t i = 0; i < m_pollfds.size(); ++i) 
