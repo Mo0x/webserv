@@ -97,22 +97,20 @@ bool SocketManager::checkHeaderLimits(int fd, ClientState &st, size_t &hdrEndPos
 
 	if (hdrEndPos > HEADER_CAP)
 	{
-                Response err = makeHtmlError(431, "Request Header Fields Too Larger", "<h1>431 Request Header Fields Too Larger</h1>");
-                finalizeAndQueue(fd, err);
-                setPhase(fd, st, ClientState::SENDING_RESPONSE, "checkHeaderLimits");
+		Response err = makeHtmlError(431, "Request Header Fields Too Larger", "<h1>431 Request Header Fields Too Larger</h1>");
+		finalizeAndQueue(fd, err);
+		setPhase(fd, st, ClientState::SENDING_RESPONSE, "checkHeaderLimits");
 		return false;
 	}
 
-		// TODO (soon): per-line cap (e.g., 8 KiB) and line count cap
-	// Iterate st.recvBuffer[0..hdrEndPos) splitting on "\r\n" and check each line.
 	return true;
 }
 
 bool SocketManager::badRequestAndQueue(int fd, ClientState &st)
 {
 	Response err = makeHtmlError(400, "Bad Request", "<h1>400 Bad Request</h1>");
-        finalizeAndQueue(fd, err);
-        setPhase(fd, st, ClientState::SENDING_RESPONSE, "badRequestAndQueue");
+	finalizeAndQueue(fd, err);
+	setPhase(fd, st, ClientState::SENDING_RESPONSE, "badRequestAndQueue");
 	return false;
 }
 
@@ -489,14 +487,6 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
                 setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
 		return false;
 	}
-	//5) If you consider "no route" an error here (older code fell back to server root),
-	//    you can keep going and let the dispatcher handle 404. Otherwise, short-circuit now:
-	// if (!route) {
-	//     Response err = makeHtmlError(404, "Not Found", "<h1>404 Not Found</h1>");
-	//     finalizeAndQueue(fd, err);
-	//     st.phase = ClientState::SENDING_RESPONSE;
-	//     return false;
-	// }
 	return true;
 
 }
