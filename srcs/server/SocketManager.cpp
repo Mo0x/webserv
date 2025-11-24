@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 20:31:44 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 20:43:12 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1505,23 +1505,22 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 		while (written < n)
 		{
 			ssize_t w = ::write(cs->mpCtx.fileFd, buf + written, n - written);
-			if (w < 0)
+			if (w <= 0)
 			{
-				if (errno == EINTR)
-					continue;
-				std::cerr << "[multipart] write error: " << std::strerror(errno) << std::endl;
+				std::cerr << "[multipart] write error while saving upload\n";
 				SocketManager::setMultipartError(*cs, 500, "Internal Server Error",
 					"<h1>500 Internal Server Error</h1><p>Failed while writing upload.</p>");
 				break;
 			}
-			if (w == 0)
-				break;
+
 			written += static_cast<size_t>(w);
 			cs->mpCtx.partBytes += static_cast<size_t>(w);
+
 			if (cs->maxFilePerPart > 0 && cs->mpCtx.partBytes > cs->maxFilePerPart)
 			{
-				std::cerr << "[multipart] part exceeded limit (" << static_cast<unsigned long>(cs->mpCtx.partBytes)
-				 << " > " <<static_cast<unsigned long>(cs->maxFilePerPart) << std::endl;
+				std::cerr << "[multipart] part exceeded limit (" 
+						  << static_cast<unsigned long>(cs->mpCtx.partBytes)
+						  << " > " << static_cast<unsigned long>(cs->maxFilePerPart) << ")\n";
 				SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
 					"<h1>413 Payload Too Large</h1><p>Upload exceeded allowed size.</p>");
 				break;
@@ -1538,14 +1537,16 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			cs->mpCtx.fieldBuffer.append(buf, toCopy);
 		if (toCopy < n)
 		{
-			std::cerr << "[multipart] field too large (>" << static_cast<unsigned long>(CAP) << "bytes)" << std::endl; 
+			std::cerr << "[multipart] field too large (>" 
+					  << static_cast<unsigned long>(CAP) << " bytes)\n";
 			SocketManager::setMultipartError(*cs, 413, "Payload Too Large",
 				"<h1>413 Payload Too Large</h1><p>Form field exceeded allowed size.</p>");
 		}
 	}
 
-	std::cerr << "[multipart] part data chunk =" << static_cast<unsigned long>(n) << "total ="	<<	static_cast<unsigned long>(cs->debugMultipartBytes)
-	<< std::endl;
+	std::cerr << "[multipart] part data chunk =" << static_cast<unsigned long>(n)
+			  << " total =" << static_cast<unsigned long>(cs->debugMultipartBytes)
+			  << std::endl;
 }
 
 void SocketManager::onPartEndThunk(void* user)
