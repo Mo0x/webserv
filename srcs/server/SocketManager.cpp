@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 18:59:41 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 19:10:26 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -713,99 +713,6 @@ void SocketManager::dispatchRequest(int fd, const Request &req,
 	finalizeAndQueue(fd, req, res, body_expected, body_fully_consumed);
 }
 
-/*----------------------------HERE IS THE NEW HANDLECLIENTTEAD v3 refactorised ------------------------------------------------
-	Inside handleClientRead(fd) now:
-	Step 0. If we already have something queued to write to that client (when st.writeBuffer is not empty), we bail early and DO NOT read more.
-	→ So we are "1 request at a time per connection" and we don't pipeline.
-	Step 1. readIntoBuffer(fd)
-	nonblocking recv into st.recvBuffer on the ClientState.
-	Handles disconnect (0 bytes or fatal error) by calling handleClientDisconnect(fd).
-
-	Step 2. Header handling
-	locateHeaders: find \r\n\r\n. Also enforces an in-progress header size cap (32KB) and if you exceed it before headers complete, you immediately queue 431 + close.
-	Once headers are found:
-	enforceHeaderLimits:
-	total header block size limit (32KB)
-	per-line max (8KB)
-	total number of header lines (<=100)
-	rejects multiple Content-Length headers
-	rejects CL+TE together
-	→ On violation: we build an error Response, mark close_connection, queue it via finalizeAndQueue(), and stop.
-
-	Step 3. Parse the request
-	parseAndValidateRequest:
-	parses request line + headers into Request.
-	normalizes header keys to lowercase.
-	looks up which ServerConfig applies to this fd using findServerForClient(fd) (so virtualhost-ish mapping).
-	checks Content-Length:
-	only digits
-	overflow safe
-	1 CL -> 400
-	CL+TE -> 400
-	checks Transfer-Encoding:
-	only allows exactly chunked. Anything else → 400.
-	enforces server-wide client_max_body_size if it's NOT chunked and CL is too large → 413.
-	If mapping server fails, we 400 and close.
-
-	Step 4. First-time header-side policy for this FD
-	processFirstTimeHeaders:
-	Runs only once per new request.
-	figures out which location/RouteConfig we're under (via findMatchingLocation), and records:
-	per-route/per-server max_body_size into ClientState::maxBodyAllowed
-	expected body length into ClientState::contentLength
-	whether request is chunked in ClientState::isChunked
-	Enforces 405 Method Not Allowed EARLY if method not in route’s allowed list.
-	-> Builds a 405 with an Allow: header, queues it, stops.
-	Enforces 411 Length Required:
-	if method is POST or PUT, and there's neither CL nor chunked, respond 411.
-	Enforces Expect: header:
-	If HTTP/1.1 and Expect: present and it's anything (including 100-continue), we currently send 417 Expectation Failed and stop.
-
-	Step 5. Body readiness
-	ensureBodyReady:
-	figures out how many body bytes we already have after the header.
-	live-stream check against maxBodyAllowed → if exceeded, send 413 and close.
-	if we advertised a Content-Length, makes sure we didn't already read more than that → 400 and close.
-	waits until we actually received the full body:
-	if CL given: require full CL bytes in buffer.
-	if chunked: require to see the terminator "0\r\n\r\n" (temporary logic).
-	If body not complete yet: just return and wait for more POLLIN.
-	If body is complete, it returns requestEnd = end index of this full request in the buffer.
-
-	Step 6. Dispatch
-	dispatchRequest does:
-	routing logic (root / index / autoindex / redirect)
-	path traversal protection (isPathSafe)
-	301 redirect if dir missing trailing slash
-	200 static file or autoindex listing, etc.
-	403, 404, 200, etc
-	For HEAD, it clears the body before queueing.
-	Calls finalizeAndQueue() with flags like body_expected/body_fully_consumed.
-
-	Step 7. After dispatch
-	Response is queued; when write completes we clear ClientState buffers and return to READING_HEADERS for keep-alive.
-	So: this is now a full HTTP/1.1-ish state machine with:
-	header caps + per-line caps
-	CL overflow safety
-	Content-Length vs. Transfer-Encoding correctness
-	body size enforcement (server/global + route override)
-	early 405/411/413/417 decisions
-	support for POST and PUT with bodies
-	preliminary chunked support (terminator check)
-	keep-alive style pipelining of sequential requests on one connection
-*/
-
-/*
-	New clienRead again, should be the last one:
-	basically now we use ClientState as a connection phase !
-	We organize based on ClientState with 3 helpers:
-		clientHasPendingWrite
-		readintoBuffer
-	Basically before we assumed we had everything as soon as we saw Headers,
-	it works for get put not for post/put etc... 
-
-*/
-
 bool SocketManager::clientHasPendingWrite(const ClientState &st) const
 {
 	return !st.writeBuffer.empty();
@@ -920,7 +827,6 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 		}
 	}
 
-	// --- CONTENT-LENGTH -----------------------------------------------------
 	// No chunked TE: read exactly st.contentLength bytes into bodyBuffer
 	const size_t want = st.contentLength;
 								const size_t haveNow = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
@@ -1002,7 +908,6 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
 
 
-// need to flesh it out once post/upload and cgi routig is ready
 void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 {
 	const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
@@ -1031,14 +936,6 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 		handlePostUpload(fd, st.req, server, route, st.bodyBuffer);
 		return;
 	}
-	// DELETE to WIRE HERE NEXT
-
-	// if (st.req.method == "DELETE") {
-	//     handleDeleteLegacy(fd, st.req, server);
-	//     st.phase = ClientState::SENDING_RESPONSE;
-	//     return;
-	// }
-	// Handle DELETE: use the new handler implementation in SocketManagerDelete.cpp
 	if (st.req.method == "DELETE")
 	{
 		const RouteConfig *route = findMatchingLocation(server, st.req.path);
@@ -1085,7 +982,7 @@ void SocketManager::handleClientRead(int fd)
 
 	 if (st.phase == ClientState::CGI_RUNNING)
 	{
-		  // While CGI is running, the client might:
+		// While CGI is running, the client might:
 		//  - close the connection (we must detect EOF)
 		//  - pipeline the next request (we should buffer it)
 		//
@@ -1096,7 +993,6 @@ void SocketManager::handleClientRead(int fd)
 		return;
 	}
 
-	// -------- BODY-FIRST fast path ------------------------------------------
 	// If we're already in READING_BODY, first try to progress with what we have
 	// before attempting another recv(). This prevents stalls when the whole body
 	// (e.g., a complete chunked message) arrived in the previous read.
@@ -1115,37 +1011,36 @@ void SocketManager::handleClientRead(int fd)
 		else
 		{
 			// Need more bytes → now attempt a read
-				if (!readIntoBuffer(fd, st))
+			if (!readIntoBuffer(fd, st))
+			{
+				// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
+				// otherwise treat as incomplete body.
+				bool completed = false;
+				if (!st.isChunked)
 				{
-					// Peer closed or fatal read. If CL case is exactly satisfied, allow dispatch;
-					// otherwise treat as incomplete body.
-					bool completed = false;
-					if (!st.isChunked)
+					const size_t have = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
+					if (st.contentLength == have && (!st.isMultipart || st.mpDone()))
 					{
-						const size_t have = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
-						if (st.contentLength == have && (!st.isMultipart || st.mpDone()))
-						{
-							setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
-							completed = true;
-						}
+						setPhase(fd, st, ClientState::READY_TO_DISPATCH, "handleClientRead");
+						completed = true;
 					}
-
-										if (!completed)
-										{
-												const ServerConfig &srv = findServerForClient(fd);
-												const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-												Response err = makeConfigErrorResponse(
-														srv,
-														rt,
-														400,
-														"Bad Request",
-														"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>"
-												);
-												finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-												setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
-												return;
-										}
 				}
+				if (!completed)
+				{
+					const ServerConfig &srv = findServerForClient(fd);
+					const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+					Response err = makeConfigErrorResponse(
+							srv,
+							rt,
+							400,
+							"Bad Request",
+							"<h1>400 Bad Request</h1><p>Unexpected close during request body.</p>"
+					);
+					finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+					setPhase(fd, st, ClientState::SENDING_RESPONSE, "handleClientRead");
+					return;
+				}
+			}
 			else
 			{
 				// Got more bytes; try to progress again
@@ -1156,7 +1051,7 @@ void SocketManager::handleClientRead(int fd)
 	}
 	else
 	{
-		// -------- HEADER / NORMAL path --------------------------------------
+		//Normal Path here
 		// 1. pull fresh bytes from recv() into st.recvBuffer
 		if (!readIntoBuffer(fd, st))
 		{
@@ -1370,19 +1265,19 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 	st.forceCloseAfterWrite = false;
 	st.closing = false;
 	st.req = Request();
-		st.bodyBuffer.clear();
-		st.isChunked = false;
-		st.contentLength = 0;
-		st.maxBodyAllowed = 0;
-		st.chunkDec = ChunkedDecoder();
-		st.isMultipart = false;
-		st.multipartInit = false;
-		st.multipartBoundary.clear();
-		st.mpState = ClientState::MP_START;
-		st.mp = MultipartStreamParser();
-		resetMultipartState(st);
-		setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
-		return true;
+	st.bodyBuffer.clear();
+	st.isChunked = false;
+	st.contentLength = 0;
+	st.maxBodyAllowed = 0;
+	st.chunkDec = ChunkedDecoder();
+	st.isMultipart = false;
+	st.multipartInit = false;
+	st.multipartBoundary.clear();
+	st.mpState = ClientState::MP_START;
+	st.mp = MultipartStreamParser();
+	resetMultipartState(st);
+	setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+	return true;
 }
 
 bool SocketManager::shouldCloseAfterThisResponse(int status_code, bool headers_complete, bool body_expected, bool body_fully_consumed, bool client_close) const
