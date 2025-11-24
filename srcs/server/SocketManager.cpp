@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 19:24:47 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 20:01:18 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1226,6 +1226,10 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 	while (!st.writeBuffer.empty())
 	{
 		size_t toSend = st.writeBuffer.size();
+		// Note : On linux if you call send() on a TCP socket t whose peer 
+		// has already closed the connection, the kernel may raise SIGPIPE, 
+		// which by default kills the process. -> dont want this on a server ! 
+		//f this would normally raise SIGPIPE, don’t send the signal; just return -1 with errno = EPIPE
 	#ifdef MSG_NOSIGNAL
 		ssize_t n = ::send(fd, st.writeBuffer.data(), toSend, MSG_NOSIGNAL);
 	#else
@@ -1249,10 +1253,10 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 				st.writeBuffer.erase(0, static_cast<size_t>(n));
 				if (st.phase == ClientState::CGI_RUNNING)
 						maybeResumeCgiStdout(fd, st);
-		}
+	}
 
-		clearPollout(fd);
-		st.writeBuffer.clear();
+	clearPollout(fd);
+	st.writeBuffer.clear();
 
 	if (st.forceCloseAfterWrite || st.closing)
 	{
