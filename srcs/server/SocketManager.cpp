@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 20:01:18 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/24 20:31:44 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -466,27 +466,23 @@ void SocketManager::handleNewConnection(int listen_fd)
 	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&sa), &slen);
 	if (client_fd < 0)
 	{
-		// EAGAIN/EWOULDBLOCK is fine for nonblocking listen sockets
 		if (errno != EAGAIN && errno != EWOULDBLOCK)
 			std::cerr << "accept() failed: " << std::strerror(errno) << std::endl;
 		return;
 	}
 
-	// Make client socket nonblocking (avoid relying on external helpers)
 	int flags = fcntl(client_fd, F_GETFL, 0);
 	if (flags != -1)
 		fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
 
 	std::cout << "Accepted new client: fd " << client_fd << std::endl;
 
-	// --- Register with poll() for reads (keep your existing poll vector logic)
 	struct pollfd pdf;
 	pdf.fd = client_fd;
 	pdf.events = POLLIN;     // ready for reading
 	pdf.revents = 0;
 	m_pollfds.push_back(pdf);
 
-	// --- Map this client to the correct server index (reuse your existing way)
 	for (size_t i = 0; i < m_servers.size(); ++i)
 	{
 		if (m_servers[i]->getFd() == listen_fd)
@@ -496,7 +492,6 @@ void SocketManager::handleNewConnection(int listen_fd)
 		}
 	}
 
-	// --- NEW: insert refactored per-connection state so handleClientRead() works
 		ClientState st = ClientState();
 		setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
 		st.recvBuffer     = std::string();
@@ -591,13 +586,12 @@ bool SocketManager::readIntoBuffer(int fd, ClientState &st)
 	if (bytes == 0)
 		return false;
 	
-	if (bytes < 0)
+	if (bytes <= 0) //we are dumb here, before we used erno but its after recv so this is clean from subject but dumb.
 	{
-		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-			return true;  // no new data yet, but keep existing buffered bytes
 		return false;
 	}
-	st.recvBuffer.append(buffer, bytes);
+
+	st.recvBuffer.append(buffer, static_cast<size_t>(bytes));
 	return true;
 }
 
@@ -1220,48 +1214,58 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 	tryFlushWrite(fd, st);
 }
 
-
+// redone because we were using send in a loop so it could go against the one sent per client/fd
+// Note : On linux if you call send() on a TCP socket t whose peer 
+// has already closed the connection, the kernel may raise SIGPIPE, 
+// which by default kills the process. -> dont want this on a server ! 
+//MSG_NOSIGNAL = this would normally raise SIGPIPE, don’t send the signal; just return -1 with errno = EPIPE
 bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 {
-	while (!st.writeBuffer.empty())
+
+	if (st.writeBuffer.empty())
 	{
-		size_t toSend = st.writeBuffer.size();
-		// Note : On linux if you call send() on a TCP socket t whose peer 
-		// has already closed the connection, the kernel may raise SIGPIPE, 
-		// which by default kills the process. -> dont want this on a server ! 
-		//f this would normally raise SIGPIPE, don’t send the signal; just return -1 with errno = EPIPE
-	#ifdef MSG_NOSIGNAL
-		ssize_t n = ::send(fd, st.writeBuffer.data(), toSend, MSG_NOSIGNAL);
-	#else
-		ssize_t n = ::send(fd, st.writeBuffer.data(), toSend, 0);
-	#endif
-		if (n < 0)
+		clearPollout(fd);
+		if (st.forceCloseAfterWrite || st.closing)
 		{
-			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-			{
-				setPollToWrite(fd);
-				return false;
-			}
 			handleClientDisconnect(fd);
 			return false;
 		}
-				if (n == 0)
-				{
-						setPollToWrite(fd);
-						return false;
-				}
-				st.writeBuffer.erase(0, static_cast<size_t>(n));
-				if (st.phase == ClientState::CGI_RUNNING)
-						maybeResumeCgiStdout(fd, st);
+
+		st.forceCloseAfterWrite = false;
+		st.closing = false;
+		setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+		return true;
 	}
 
-	clearPollout(fd);
-	st.writeBuffer.clear();
+	// here we have just one send() from the subject and we dont check errno after it
+#ifdef MSG_NOSIGNAL
+	ssize_t n = ::send(fd, st.writeBuffer.data(), st.writeBuffer.size(), MSG_NOSIGNAL);
+#else
+	ssize_t n = ::send(fd, st.writeBuffer.data(), st.writeBuffer.size(), 0);
+#endif
+	if (n <= 0)
+	{
+		handleClientDisconnect(fd);
+		return false;
+	}
 
+	// here we know we sent something so we delete that from writeBuffer
+	st.writeBuffer.erase(0, static_cast<size_t>(n));
+
+	if (st.phase == ClientState::CGI_RUNNING)
+		maybeResumeCgiStdout(fd, st);
+
+	// keep POLLOUT till we send everything
+	if (!st.writeBuffer.empty())
+	{
+		setPollToWrite(fd);   // ensure POLLOUT is set
+		return false;         // still flushing this response
+	}
+	clearPollout(fd);
 	if (st.forceCloseAfterWrite || st.closing)
 	{
-			handleClientDisconnect(fd);
-			return false;
+		handleClientDisconnect(fd);
+		return false;
 	}
 
 	st.forceCloseAfterWrite = false;

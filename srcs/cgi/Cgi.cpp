@@ -228,30 +228,21 @@ void SocketManager::handleCgiWritable(int pipefd)
 	}
 
 	bool shouldClose = st.cgi.inBuf.empty();
-	while (!st.cgi.inBuf.empty())
+
+	if (!st.cgi.inBuf.empty())
 	{
 		ssize_t n = ::write(pipefd, &st.cgi.inBuf[0], st.cgi.inBuf.size());
+
 		if (n > 0)
 		{
 			st.cgi.inBuf.erase(0, static_cast<size_t>(n));
 			st.cgi.bytesInTotal += static_cast<size_t>(n);
-			shouldClose = st.cgi.inBuf.empty();
-			continue;
+			shouldClose = st.cgi.inBuf.empty();   // close when request body fully sent
 		}
-
-		if (n < 0)
+		else
 		{
-			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-				return;
-
-			// Treat EPIPE (child closed stdin) the same as being done.
 			shouldClose = true;
-			break;
 		}
-
-		// n == 0
-		shouldClose = true;
-		break;
 	}
 
 	if (shouldClose)
@@ -265,6 +256,34 @@ void SocketManager::handleCgiWritable(int pipefd)
 }
 
 void SocketManager::handleCgiReadable(int pipefd)
+{
+	std::map<int,int>::iterator it = m_cgiStdoutToClient.find(pipefd);
+	if (it == m_cgiStdoutToClient.end())
+		return;
+
+	int clientFd = it->second;
+	ClientState &st = m_clients[clientFd];
+
+	char buf[4096];
+
+	ssize_t n = ::read(pipefd, buf, sizeof(buf));
+
+	if (n > 0)
+	{
+		st.cgi.outBuf.append(buf, static_cast<size_t>(n));
+		drainCgiOutput(clientFd);   // parse headers / push body / enforce caps
+	}
+	else
+	{
+		::close(pipefd);
+		st.cgi.stdout_r = -1;
+		delPollFd(pipefd);
+		m_cgiStdoutToClient.erase(it);
+
+		drainCgiOutput(clientFd);
+	}
+}
+/* void SocketManager::handleCgiReadable(int pipefd)
 {
 	std::map<int,int>::iterator it = m_cgiStdoutToClient.find(pipefd);
 	if (it == m_cgiStdoutToClient.end()) return;
@@ -315,7 +334,7 @@ void SocketManager::handleCgiReadable(int pipefd)
 
 	if (gotData)
 		drainCgiOutput(clientFd);               // parse headers / push body / enforce caps
-}
+} */
 
 
 void SocketManager::handleCgiPipeError(int pipefd)
