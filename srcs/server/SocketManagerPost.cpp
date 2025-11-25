@@ -85,7 +85,7 @@ static void splitScriptAndPathInfo(const std::string &urlPath,
 }
 
 
-//take fd and complete info for env variables
+//take fd and complete info for env variables mamy use illegal function tho :'(
 static void getSocketAddrs(int clientFd,
 			   std::string &remoteAddr, std::string &remotePort,
 			   std::string &serverAddr, std::string &serverPort)
@@ -379,7 +379,8 @@ void SocketManager::startCgiDispatch(int fd,
 		env.reserve(64);
 
 		// 1) URL parts and addresses
-		std::string urlPath, query; splitPathAndQuery(st.req.path, urlPath, query);
+		std::string urlPath, query;
+		splitPathAndQuery(st.req.path, urlPath, query);
 		std::string remoteAddr, remotePort, serverAddr, serverPort;
 		getSocketAddrs(fd, remoteAddr, remotePort, serverAddr, serverPort);
 

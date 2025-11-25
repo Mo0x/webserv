@@ -59,3 +59,4 @@ You should see:
     In the body: {"hello": "world", "n": 123}
 
 
+THEN HAVE SOME FUN WITH : cgi_infinite_loop.py and cgi_sleep_long.py for timeout 
