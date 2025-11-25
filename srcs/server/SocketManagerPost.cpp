@@ -391,16 +391,16 @@ void SocketManager::startCgiDispatch(int fd,
 		if (!hostHeader.empty())
 		{
 			std::string h = hostHeader;
-			while(!h.empty()&&(h[0]==' '|| h[0]=='\t')) 
+			while(!h.empty() && (h[0]==' '|| h[0]=='\t')) 
 				h.erase(0,1);
-			while(!h.empty()&&(h[h.size()-1]==' '|| h[h.size()-1]=='\t'))
+			while(!h.empty() && (h[h.size()-1]==' '|| h[h.size()-1]=='\t'))
 				h.erase(h.size()-1);
-			size_t c=h.rfind(':');
-			if (c!=std::string::npos)
+			size_t c = h.rfind(':');
+			if (c != std::string::npos)
 			{
-				serverName=h.substr(0,c); serverPortStr=h.substr(c+1);
+				serverName = h.substr(0,c); serverPortStr=h.substr(c + 1);
 			}
-			else serverName=h;
+			else serverName = h;
 		}
 
 		// 2) Core vars
@@ -421,10 +421,10 @@ void SocketManager::startCgiDispatch(int fd,
 				env.push_back("PATH_INFO=" + pathInfo);
 
 		// REQUEST_URI & QUERY_STRING
-		env.push_back("REQUEST_URI="+urlPath+(query.empty()?"":"?"+query));
+		env.push_back("REQUEST_URI="+urlPath+(query.empty() ? "" : "?" +query));
 		env.push_back("QUERY_STRING="+query);
 
-		// Document root (optional)
+		// Document root
 		{
 			std::string docroot = !route.root.empty() ? route.root : server.root;
 			if (!docroot.empty()) env.push_back("DOCUMENT_ROOT="+docroot);
@@ -435,27 +435,32 @@ void SocketManager::startCgiDispatch(int fd,
 		if (!remotePort.empty()) env.push_back("REMOTE_PORT="+remotePort);
 
 		// CONTENT_* (use actual stdin size we feed)
-		if (!st.cgi.inBuf.empty()){
-			std::ostringstream oss; oss<<st.cgi.inBuf.size();
-			env.push_back("CONTENT_LENGTH="+oss.str());
+		if (!st.cgi.inBuf.empty())
+		{
+			std::ostringstream oss;
+			oss << st.cgi.inBuf.size();
+			env.push_back("CONTENT_LENGTH="+ oss.str());
 		}
-		{ std::map<std::string,std::string>::const_iterator itCT=st.req.headers.find("content-type");
-		if (itCT!=st.req.headers.end()) env.push_back("CONTENT_TYPE="+itCT->second); }
+		{
+			std::map<std::string,std::string>::const_iterator itCT=st.req.headers.find("content-type");
+			if (itCT!=st.req.headers.end()) 
+				env.push_back("CONTENT_TYPE="+itCT->second);
+		}
 
-		// HTTP_* for all other headers
-		for (std::map<std::string,std::string>::const_iterator it=st.req.headers.begin();
-		it!=st.req.headers.end(); ++it)
+		for (std::map<std::string,std::string>::const_iterator it=st.req.headers.begin(); it!=st.req.headers.end(); ++it)
 		{
 			const std::string &k = it->first;
-			if (k=="content-type" || k=="content-length") continue;
-			env.push_back("HTTP_"+httpKeyToCgiVar(k)+"="+it->second);
+			if (k == "content-type" || k == "content-length")
+				continue;
+			env.push_back("HTTP_"+ httpKeyToCgiVar(k) + "=" +it->second);
 		}
 
-		// Honor cgi_pass_env
-		for (size_t i=0;i<route.cgi_pass_env.size();++i){
+		for (size_t i=0;i < route.cgi_pass_env.size();++i)
+		{
 			const std::string &key = route.cgi_pass_env[i];
-			const char* v = std::getenv(key.c_str());
-			if (v && *v) env.push_back(key+"="+std::string(v));
+			const char *v = std::getenv(key.c_str());
+			if (v && *v)
+				env.push_back(key+"="+std::string(v));
 		}
 
 		// Convert to char*[]
@@ -499,7 +504,6 @@ void SocketManager::startCgiDispatch(int fd,
 	std::cerr << "[fd " << fd << "] CGI spawned pid=" << pid
 			<< " stdin_w=" << st.cgi.stdin_w
 			<< " stdout_r=" << st.cgi.stdout_r << std::endl;
-	// Optional debug
 	std::cerr << "[fd " << fd << "] CGI dispatch : wd=" << st.cgi.workingDir.c_str() << "script=" << st.cgi.scriptFsPath.c_str() << std::endl;
 }
 
