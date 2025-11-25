@@ -390,10 +390,10 @@ MultipartStreamParser::Result MultipartStreamParser::feed(const char* data, size
 			}
 			case S_DATA :
 			{
-			                // find next boundary; emit data before it via m_onData
-                // regular boundary -> onEnd(); m_st = S_HEADERS; progress = true;
-                // closing boundary -> onEnd(); m_st = S_DONE; return DONE;
-                // if partial boundary at tail, keep overlap and break loop
+				// find next boundary; emit data before it via m_onData
+				// regular boundary -> onEnd(); m_st = S_HEADERS; progress = true;
+				// closing boundary -> onEnd(); m_st = S_DONE; return DONE;
+				// if partial boundary at tail, keep overlap and break loop
 				bool did = false;
 				DRes r = s_dataFlow(did);
 				if (r == D_ERR)
@@ -425,10 +425,10 @@ MultipartStreamParser::Result MultipartStreamParser::feed(const char* data, size
 
 int MultipartStreamParser::mp_state() const
 {
-        return static_cast<int>(m_st);
+		return static_cast<int>(m_st);
 }
 
 bool MultipartStreamParser::isDone() const
 {
-        return m_st == S_DONE;
+		return m_st == S_DONE;
 }
