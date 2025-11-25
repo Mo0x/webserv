@@ -136,109 +136,109 @@ static void splitCsvLower(const std::string &s, std::vector<std::string> &out)
 	}
 	trim(cur);
 	toLowerInPlace(cur);
-        if (!cur.empty()) out.push_back(cur);
+		if (!cur.empty()) out.push_back(cur);
 }
 
 static bool isValidMultipartBoundaryToken(const std::string &boundary)
 {
-        if (boundary.empty() || boundary.size() > 70)
-                return false;
-        for (size_t i = 0; i < boundary.size(); ++i)
-        {
-                const char c = boundary[i];
-                const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-                const bool digit = (c >= '0' && c <= '9');
-                const bool extra = (c == '.' || c == '_' || c == '+' || c == '-');
-                if (!(alpha || digit || extra))
-                        return false;
-        }
-        return true;
+		if (boundary.empty() || boundary.size() > 70)
+				return false;
+		for (size_t i = 0; i < boundary.size(); ++i)
+		{
+				const char c = boundary[i];
+				const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+				const bool digit = (c >= '0' && c <= '9');
+				const bool extra = (c == '.' || c == '_' || c == '+' || c == '-');
+				if (!(alpha || digit || extra))
+						return false;
+		}
+		return true;
 }
 
 bool SocketManager::detectMultipartBoundary(int fd, ClientState &st)
 {
-        st.isMultipart = false;
-        st.multipartBoundary.clear();
-        st.multipartInit = false;
+		st.isMultipart = false;
+		st.multipartBoundary.clear();
+		st.multipartInit = false;
 
-        std::map<std::string, std::string>::const_iterator it = st.req.headers.find("content-type");
-        if (it == st.req.headers.end())
-                return true;
+		std::map<std::string, std::string>::const_iterator it = st.req.headers.find("content-type");
+		if (it == st.req.headers.end())
+				return true;
 
-        const std::string raw = it->second;
-        if (raw.empty())
-                return true;
+		const std::string raw = it->second;
+		if (raw.empty())
+				return true;
 
-        const std::string::size_type semi = raw.find(';');
-        std::string typePart = (semi == std::string::npos) ? raw : raw.substr(0, semi);
-        trim(typePart);
-        std::string typeLower = typePart;
-        toLowerInPlace(typeLower);
-        const std::string::size_type wantLen = std::string("multipart/form-data").size();
-        if (typeLower.size() < wantLen || typeLower.compare(0, wantLen, "multipart/form-data") != 0)
-                return true;
+		const std::string::size_type semi = raw.find(';');
+		std::string typePart = (semi == std::string::npos) ? raw : raw.substr(0, semi);
+		trim(typePart);
+		std::string typeLower = typePart;
+		toLowerInPlace(typeLower);
+		const std::string::size_type wantLen = std::string("multipart/form-data").size();
+		if (typeLower.size() < wantLen || typeLower.compare(0, wantLen, "multipart/form-data") != 0)
+				return true;
 
-        std::string boundaryValue;
-        bool boundaryFound = false;
+		std::string boundaryValue;
+		bool boundaryFound = false;
 
-        std::string params = (semi == std::string::npos) ? std::string() : raw.substr(semi + 1);
-        std::string::size_type pos = 0;
-        while (pos < params.size())
-        {
-                std::string::size_type nextSemi = params.find(';', pos);
-                std::string param = params.substr(pos, (nextSemi == std::string::npos) ? std::string::npos : nextSemi - pos);
-                trim(param);
-                if (!param.empty())
-                {
-                        size_t eq = param.find('=');
-                        if (eq != std::string::npos)
-                        {
-                                std::string name = param.substr(0, eq);
-                                trim(name);
-                                toLowerInPlace(name);
-                                std::string value = param.substr(eq + 1);
-                                trim(value);
-                                if (!value.empty() && value[0] == '"')
-                                {
-                                        if (value.size() >= 2 && value[value.size() - 1] == '"')
-                                                value = value.substr(1, value.size() - 2);
-                                        else
-                                                value.clear();
-                                }
-                                if (name == "boundary")
-                                {
-                                        boundaryFound = true;
-                                        boundaryValue = value;
-                                        break;
-                                }
-                        }
-                }
-                if (nextSemi == std::string::npos)
-                        break;
-                pos = nextSemi + 1;
-        }
+		std::string params = (semi == std::string::npos) ? std::string() : raw.substr(semi + 1);
+		std::string::size_type pos = 0;
+		while (pos < params.size())
+		{
+			std::string::size_type nextSemi = params.find(';', pos);
+			std::string param = params.substr(pos, (nextSemi == std::string::npos) ? std::string::npos : nextSemi - pos);
+			trim(param);
+			if (!param.empty())
+			{
+				size_t eq = param.find('=');
+				if (eq != std::string::npos)
+				{
+					std::string name = param.substr(0, eq);
+					trim(name);
+					toLowerInPlace(name);
+					std::string value = param.substr(eq + 1);
+					trim(value);
+					if (!value.empty() && value[0] == '"')
+					{
+						if (value.size() >= 2 && value[value.size() - 1] == '"')
+							value = value.substr(1, value.size() - 2);
+						else
+							value.clear();
+					}
+					if (name == "boundary")
+					{
+						boundaryFound = true;
+						boundaryValue = value;
+						break;
+					}
+				}
+			}
+			if (nextSemi == std::string::npos)
+				break;
+				pos = nextSemi + 1;
+		}
 
-        if (!boundaryFound || boundaryValue.empty())
-        {
-                Response err = makeHtmlError(400, "Bad Request",
-                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>");
-                finalizeAndQueue(fd, err);
-                setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryParseHeaders");
-                return false;
-        }
-        if (!isValidMultipartBoundaryToken(boundaryValue))
-        {
-                Response err = makeHtmlError(400, "Bad Request",
-                        "<h1>400 Bad Request</h1><p>Invalid multipart boundary.</p>");
-                finalizeAndQueue(fd, err);
-                setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryParseHeaders");
-                return false;
-        }
+		if (!boundaryFound || boundaryValue.empty())
+		{
+				Response err = makeHtmlError(400, "Bad Request",
+						"<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>");
+				finalizeAndQueue(fd, err);
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryParseHeaders");
+				return false;
+		}
+		if (!isValidMultipartBoundaryToken(boundaryValue))
+		{
+				Response err = makeHtmlError(400, "Bad Request",
+						"<h1>400 Bad Request</h1><p>Invalid multipart boundary.</p>");
+				finalizeAndQueue(fd, err);
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryParseHeaders");
+				return false;
+		}
 
-        st.isMultipart = true;
-        st.multipartBoundary = boundaryValue;
-        std::cerr << "[fd " << fd << "] multipart boundary=" << boundaryValue << std::endl;
-        return true;
+		st.isMultipart = true;
+		st.multipartBoundary = boundaryValue;
+		std::cerr << "[fd " << fd << "] multipart boundary=" << boundaryValue << std::endl;
+		return true;
 }
 
 /**
@@ -354,8 +354,8 @@ bool SocketManager::parseRawHeadersIntoRequest(int fd, ClientState &st, size_t h
 	st.req.path = target;      // or st.req.uri
 	st.req.http_version = version;
 	std::cerr << "[fd " << fd << "] parsed request line + headers: "
-          << st.req.method << " " << st.req.path << " " << st.req.http_version
-          << " (hdrs=" << st.req.headers.size() << ")\n";
+		  << st.req.method << " " << st.req.path << " " << st.req.http_version
+		  << " (hdrs=" << st.req.headers.size() << ")\n";
 
 
 	// 2) Header fields
@@ -483,8 +483,8 @@ bool SocketManager::applyRoutePolicyAfterHeaders(int fd, ClientState &st)
 		redir.headers["Content-Length"] = to_string(redir.body.length());
 		redir.close_connection = false;
 
-                finalizeAndQueue(fd, redir);
-                setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
+				finalizeAndQueue(fd, redir);
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "applyRoutePolicyAfterHeaders");
 		return false;
 	}
 	return true;
@@ -511,8 +511,8 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 	{
 		Response err = makeHtmlError(400, "Bad Request",
 			"<h1>400 Bad Request</h1><p>Both Transfer-Encoding and Content-Length present.</p>");
-                finalizeAndQueue(fd, err);
-                setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
+				finalizeAndQueue(fd, err);
+				setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 		return false;
 	}
 	// 2) Transfer-Encoding handling (only support 'chunked')
@@ -525,42 +525,38 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(400, "Bad Request",
 				"<h1>400 Bad Request</h1><p>Empty Transfer-Encoding.</p>");
-                        finalizeAndQueue(fd, err);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
+						finalizeAndQueue(fd, err);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
-		// Only support exactly "chunked" OR ...,"chunked" as the last step.
-		// Be strict: if there are other codings (e.g., gzip), reply 501 for now.
+		// Only support exactly "chunked"
 		if (tokens.size() == 1 && tokens[0] == "chunked")
 		{
 			st.isChunked = true;
 			// st.contentLength stays 0
-			return true; // no early 413 possible here; enforce during streaming
+			return true; // no early 413 enforce during streaming
 		}
 
-		// Allow multiple tokens only if last is "chunked" and the rest are identity/empty?
-		// To keep it simple and safe, reject multi-codings for now.
 		{
 			Response err = makeHtmlError(501, "Not Implemented",
 				"<h1>501 Not Implemented</h1><p>Unsupported Transfer-Encoding.</p>");
-                        finalizeAndQueue(fd, err);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
+						finalizeAndQueue(fd, err);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 	}
 	// 3) Content-Length handling
 	if (hasCL)
 	{
-		// If duplicates were merged by parser as "v1,v2", treat as invalid unless exactly one value.
 		std::vector<std::string> vals;
 		splitCsvLower(itCL->second, vals);
 		if (vals.size() != 1)
 		{
 			Response err = makeHtmlError(400, "Bad Request",
 				"<h1>400 Bad Request</h1><p>Multiple Content-Length values.</p>");
-                        finalizeAndQueue(fd, err);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
+						finalizeAndQueue(fd, err);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
@@ -570,35 +566,32 @@ bool SocketManager::setupBodyFramingAndLimits(int fd, ClientState &st)
 		{
 			Response err = makeHtmlError(400, "Bad Request",
 				"<h1>400 Bad Request</h1><p>Invalid Content-Length.</p>");
-                        finalizeAndQueue(fd, err);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
+						finalizeAndQueue(fd, err);
+						setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
 			return false;
 		}
 
-                st.contentLength = cl;
-
-                // 4) Early 413 if CL exceeds policy
-                if (st.maxBodyAllowed > 0 && st.contentLength > st.maxBodyAllowed)
-                {
-                        const ServerConfig &srv = findServerForClient(fd);
-                        const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-                        Response err = makeConfigErrorResponse(
-                                srv,
-                                rt,
-                                413,
-                                "Payload Too Large",
-                                "<h1>413 Payload Too Large</h1>"
-                        );
-                        finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-                        setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
-                        return false;
-                }
-
+		st.contentLength = cl;
+		// 4) Early 413 if CL exceeds policy
+		if (st.maxBodyAllowed > 0 && st.contentLength > st.maxBodyAllowed)
+		{
+			const ServerConfig &srv = findServerForClient(fd);
+			const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+			Response err = makeConfigErrorResponse(
+								srv,
+								rt,
+								413,
+								"Payload Too Large",
+								"<h1>413 Payload Too Large</h1>");
+			finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+			setPhase(fd, st, ClientState::SENDING_RESPONSE, "setupBodyFramingAndLimits");
+			return false;
+		}
 		return true;
 	}
 
 	// 4) No TE, no CL -> no body expected (for HTTP/1.1 requests without explicit framing)
-	// We'll treat it as zero-length body; dispatcher can proceed.
+	// == zero length body -> dispatcher can proceed.
 	st.contentLength = 0;
 	return true;
 }
@@ -628,13 +621,13 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		hdrEndPos = st.recvBuffer.size(); // defensive
 	st.recvBuffer.erase(0, hdrEndPos);
 	// 2) Decide the next phase + optionally move already-received body bytes (CL case)
-        if (st.isChunked)
-        {
-                // For chunked, we don't pre-consume here. The chunk decoder will
-                // pull from st.recvBuffer during tryReadBody.
-                setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
-                return;
-        }
+		if (st.isChunked)
+		{
+				// For chunked, we don't pre-consume here. The chunk decoder will
+				// pull from st.recvBuffer during tryReadBody.
+				setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+				return;
+		}
 
 	// Non-chunked framing
 	if (st.contentLength > 0)
@@ -650,12 +643,12 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		size_t have = st.recvBuffer.size();
 		size_t need = st.contentLength - st.bodyBuffer.size();
 
-                if (have == 0)
-                {
-                        // No body bytes coalesced yet — switch to body phase and wait for more
-                        setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
-                        return;
-                }
+		if (have == 0)
+		{
+			// No body bytes coalesced yet — switch to body phase and wait for more
+			setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+			return;
+		}
 
 		// Move as much as we need from recvBuffer -> bodyBuffer
 		size_t take = (have < need) ? have : need;
@@ -666,91 +659,91 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		}
 
 		// If we finished the body right away, we may already have pipelined data
-                if (st.bodyBuffer.size() >= st.contentLength)
-                {
-                        // Body complete -> ready to dispatch immediately.
-                        // Any surplus left in st.recvBuffer is the start of the next request (HTTP pipelining).
-                        setPhase(fd, st, ClientState::READY_TO_DISPATCH, "finalizeHeaderPhaseTransition");
-                }
-                else
-                {
-                        // Still need more body bytes
-                        setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
-                }
-        }
-        else
-        {
-                // No body expected (no TE and no CL) — dispatch immediately
-                setPhase(fd, st, ClientState::READY_TO_DISPATCH, "finalizeHeaderPhaseTransition");
-        }
+		if (st.bodyBuffer.size() >= st.contentLength)
+		{
+			// Body complete -> ready to dispatch immediately.
+			// Any surplus left in st.recvBuffer is the start of the next request (HTTP pipelining).
+			setPhase(fd, st, ClientState::READY_TO_DISPATCH, "finalizeHeaderPhaseTransition");
+		}
+		else
+		{
+				// Still need more body bytes
+				setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+		}
+	}
+	else
+	{
+		// No body expected (no TE and no CL) — dispatch immediately
+		setPhase(fd, st, ClientState::READY_TO_DISPATCH, "finalizeHeaderPhaseTransition");
+	}
 	std::cerr << "[fd "<< fd << "] header->body: phase=" << phaseToStr(st.phase)
-          << " recv=" << st.recvBuffer.size()
-          << " body=" << st.bodyBuffer.size() << std::endl;
+		<< " recv=" << st.recvBuffer.size()
+		<< " body=" << st.bodyBuffer.size() << std::endl;
 }
 
 bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
 {
-        // Only enforce multipart handling for POST uploads; other methods proceed unchanged.
-        if (st.req.method != "POST")
-                return true;
+		// Only enforce multipart handling for POST uploads; other methods proceed unchanged.
+		if (st.req.method != "POST")
+				return true;
 
-        // If this request is not multipart, no additional setup is required.
-        if (!st.isMultipart)
-                return true;
+		// If this request is not multipart, no additional setup is required.
+		if (!st.isMultipart)
+				return true;
 
-        if (st.multipartBoundary.empty())
-        {
-                const ServerConfig &srv = findServerForClient(fd);
-                const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-                Response err = makeConfigErrorResponse(
-                        srv,
-                        rt,
-                        400,
-                        "Bad Request",
-                        "<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
-                );
-                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-                return false;
-        }
+		if (st.multipartBoundary.empty())
+		{
+				const ServerConfig &srv = findServerForClient(fd);
+				const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+				Response err = makeConfigErrorResponse(
+						srv,
+						rt,
+						400,
+						"Bad Request",
+						"<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
+				);
+				finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+				return false;
+		}
 
-        const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
-        const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
-        if (!route || route->upload_path.empty())
-        {
-                Response err = makeConfigErrorResponse(
-                        server,
-                        route,
-                        403,
-                        "Forbidden",
-                        "<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
-                );
-                finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-                return false;
-        }
+		const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+		const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
+		if (!route || route->upload_path.empty())
+		{
+				Response err = makeConfigErrorResponse(
+						server,
+						route,
+						403,
+						"Forbidden",
+						"<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
+				);
+				finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+				return false;
+		}
 
-        st.uploadDir = route->upload_path;
+		st.uploadDir = route->upload_path;
 
-        // Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
-        resetMultipartState(st);
-        st.multipartInit = false;
-        st.mpState = ClientState::MP_START;
+		// Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
+		resetMultipartState(st);
+		st.multipartInit = false;
+		st.mpState = ClientState::MP_START;
 
-        st.mp.reset(st.multipartBoundary,
-                    &SocketManager::onPartBeginThunk,
-                    &SocketManager::onPartDataThunk,
-                    &SocketManager::onPartEndThunk,
-                    &st);
-        st.multipartInit = true;
-        return true;
+		st.mp.reset(st.multipartBoundary,
+					&SocketManager::onPartBeginThunk,
+					&SocketManager::onPartDataThunk,
+					&SocketManager::onPartEndThunk,
+					&st);
+		st.multipartInit = true;
+		return true;
 }
 
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 {
-		// 1) do we have full headers?
+	// 1) do we have full headers?
 	size_t hdrEndPos;
 	std::cerr << "[fd " << fd << "] tryReadBody: chunked=" << (st.isChunked?1:0)
-          << " recv=" << st.recvBuffer.size()
-          << " body=" << st.bodyBuffer.size() << std::endl;
+		  << " recv=" << st.recvBuffer.size()
+		  << " body=" << st.bodyBuffer.size() << std::endl;
 	if (findHeaderBoundary(st, hdrEndPos))
 		return true;
 
@@ -762,19 +755,17 @@ bool SocketManager::tryParseHeaders(int fd, ClientState &st)
 	if (!parseRawHeadersIntoRequest(fd, st, hdrEndPos))
 		return false;
 
-        // (optional) header dump for debugging
-        std::cerr << "[fd " << fd << "] headers:";
-        for (std::map<std::string,std::string>::const_iterator it = st.req.headers.begin();
-                it != st.req.headers.end(); ++it)
-                std::cerr << " [" << it->first << ": " << it->second << "]";
-        std::cerr << std::endl;
+	// header dump for debugging
+	std::cerr << "[fd " << fd << "] headers:";
+	for (std::map<std::string,std::string>::const_iterator it = st.req.headers.begin(); it != st.req.headers.end(); ++it)
+		std::cerr << " [" << it->first << ": " << it->second << "]" << std::endl;
 
-        if (!detectMultipartBoundary(fd, st))
-                return false;
+	if (!detectMultipartBoundary(fd, st))
+		return false;
 
-        // 4) policy (method allowed, maxBodyAllowed, redirects...)
-        if (!applyRoutePolicyAfterHeaders(fd, st))
-                return false;
+	// 4) policy (method allowed, maxBodyAllowed, redirects...)
+	if (!applyRoutePolicyAfterHeaders(fd, st))
+		return false;
 
 	// 5) framing (sets st.isChunked / st.contentLength, may queue 4xx/5xx)
 	if (!setupBodyFramingAndLimits(fd, st))
