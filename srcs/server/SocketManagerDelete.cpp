@@ -48,30 +48,30 @@ void SocketManager::handleDelete(int fd,
 	if (!strippedPath.empty() && strippedPath[0] != '/')
 		strippedPath = "/" + strippedPath;
 
-        std::string fullPath = effectiveRoot + strippedPath;
+	std::string fullPath = effectiveRoot + strippedPath;
 
-        // Safety checks
-        if (!isPathSafe(effectiveRoot, fullPath))
-        {
-                Response res = makeConfigErrorResponse(server, r, 403, "Forbidden", "<h1>403 Forbidden</h1>");
-                finalizeAndQueue(fd, req, res, false, true);
-                return;
-        }
+	// Safety checks
+	if (!isPathSafe(effectiveRoot, fullPath))
+	{
+		Response res = makeConfigErrorResponse(server, r, 403, "Forbidden", "<h1>403 Forbidden</h1>");
+		finalizeAndQueue(fd, req, res, false, true);
+		return;
+	}
 
 	// If it's a directory, refuse
-        if (dirExists(fullPath))
-        {
-                Response res = makeConfigErrorResponse(server, r, 403, "Forbidden", "<h1>403 Forbidden</h1>");
-                finalizeAndQueue(fd, req, res, false, true);
-                return;
-        }
+	if (dirExists(fullPath))
+	{
+		Response res = makeConfigErrorResponse(server, r, 403, "Forbidden", "<h1>403 Forbidden</h1>");
+		finalizeAndQueue(fd, req, res, false, true);
+		return;
+	}
 
-        if (!fileExists(fullPath))
-        {
-                Response res = makeConfigErrorResponse(server, r, 404, "Not Found", "<h1>404 Not Found</h1>");
-                finalizeAndQueue(fd, req, res, false, true);
-                return;
-        }
+	if (!fileExists(fullPath))
+	{
+		Response res = makeConfigErrorResponse(server, r, 404, "Not Found", "<h1>404 Not Found</h1>");
+		finalizeAndQueue(fd, req, res, false, true);
+		return;
+	}
 
 	// Attempt unlink
 	if (::unlink(fullPath.c_str()) == 0)

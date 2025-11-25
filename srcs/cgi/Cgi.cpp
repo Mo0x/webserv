@@ -130,11 +130,11 @@ void SocketManager::checkCgiTimeouts()
 
 void Cgi::reset()
 {
-		pid            = -1;
-		stdin_w        = -1;
-		stdout_r       = -1;
-		stdin_closed   = false;
-		stdoutPaused   = false;
+	pid            = -1;
+	stdin_w        = -1;
+	stdout_r       = -1;
+	stdin_closed   = false;
+	stdoutPaused   = false;
 
 	inBuf.clear();
 	outBuf.clear();

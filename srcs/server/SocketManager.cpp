@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 20:38:01 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 20:38:31 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1537,6 +1537,7 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 void SocketManager::onPartEndThunk(void* user)
 {
 	ClientState *cs = static_cast<ClientState*>(user);
+	//file case
 	if (cs && cs->mpCtx.writingFile)
 	{
 		if (cs->mpCtx.fileFd >= 0)
@@ -1557,6 +1558,7 @@ void SocketManager::onPartEndThunk(void* user)
 		cs->mpCtx.currentFilePath.clear();
 		cs->mpCtx.writingFile = false;
 	}
+	//field case
 	else if (cs)
 	{
 		if (!cs->multipartError && !cs->mpCtx.fieldName.empty())

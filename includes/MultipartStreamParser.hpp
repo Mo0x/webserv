@@ -11,12 +11,10 @@ class MultipartStreamParser
 	typedef void (*PartDataCb)(void* user, const char* buf, size_t n);
 	typedef void (*PartEndCb)(void* user);
 
+	// Public result of Feed
 	enum Result {	MORE,
 					DONE,
-					ERR };
-
-	
-	
+					ERR };	
 
 	MultipartStreamParser();
 
@@ -32,15 +30,18 @@ class MultipartStreamParser
 	bool isDone() const;
 
 	private:
+	//internal state of our parser
 	enum S {	S_PREAMBLE,
 				S_HEADERS,
 				S_DATA,
 				S_DONE,
 				S_ERROR };
 
+	//Res of parsing Header block
 	enum HRes{	H_MORE,
 				H_OK,
 				H_ERR };
+	// Result of S_DATA processing
 	enum DRes{	D_MORE,
 				D_OK,
 				D_DONE,
