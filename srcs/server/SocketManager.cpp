@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 16:58:43 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 17:49:52 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,35 +38,34 @@ bool ClientState::mpDone() const
 }
 
 ClientState::ClientState() :
-		phase(READING_HEADERS),
-		recvBuffer(),
-		req(),
-		isChunked(false),
-		contentLength(0),
-		maxBodyAllowed(0),
-		bodyBuffer(),
-		chunkDec(),
-		writeBuffer(),
-		forceCloseAfterWrite(false),
-		closing(false),
-		isMultipart(false),
-		multipartInit(false),
-		multipartBoundary(),
-		mpState(MP_START),
-		mp(),
-		mpCtx(),
-		debugMultipartBytes(0),
-		uploadDir(),
-		maxFilePerPart(0),
-		multipartError(false),
-		multipartStatusCode(0),
+	phase(READING_HEADERS),
+	recvBuffer(),
+	req(),
+	isChunked(false),
+	contentLength(0),
+	maxBodyAllowed(0),
+	bodyBuffer(),
+	chunkDec(),
+	writeBuffer(),
+	forceCloseAfterWrite(false),
+	closing(false),
+	isMultipart(false),
+	multipartInit(false),
+	multipartBoundary(),
+	mpState(MP_START),
+	mp(),
+	mpCtx(),
+	debugMultipartBytes(0),
+	uploadDir(),
+	maxFilePerPart(0),
+	multipartError(false),
+	multipartStatusCode(0),
 	multipartStatusTitle(),
 	multipartStatusBody()
 {
 	return ;
 }
 
-// ============================ State helpers =================================
 /* helper for safeguard*/
 //debug func
 
@@ -102,9 +101,7 @@ SocketManager::SocketManager(const Config &config) :
 	return ;
 }
 
-// ========================= SocketManager lifecycle ==========================
 
-// --- CGI detection helper ---------------------------------------------------
 static bool isCgiEndpoint(const RouteConfig &route, const std::string &urlPath)
 {
 	const std::string ext = getFileExtension(urlPath);
@@ -353,7 +350,6 @@ SocketManager::~SocketManager()
 		delete m_servers[i];
 }
 
-// ------------------------------ Poll setup ---------------------------------
 void SocketManager::addServer(const std::string &host, unsigned short port)
 {
 	ServerSocket* server = new ServerSocket(host, port);

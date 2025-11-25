@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/08 16:45:28 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 20:45:42 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 17:49:06 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,7 +31,7 @@
 ServerSocket::ServerSocket() :
 	m_fd(-1), m_port(0), m_host("127.0.0.1")
 {
-    std::cerr << "default used !!!!!!" << std::endl;
+	std::cerr << "default used !!!!!!" << std::endl;
 	return ;
 }
 
@@ -49,9 +49,9 @@ ServerSocket::ServerSocket(const ServerSocket& other)
 ServerSocket::~ServerSocket()
 
 {
-    std::cout << "[DEBUG] Destroying ServerSocket fd " << m_fd << std::endl;
-    if (m_fd != -1)
-        close(m_fd);
+	std::cout << "[DEBUG] Destroying ServerSocket fd " << m_fd << std::endl;
+	if (m_fd != -1)
+		close(m_fd);
 }
 ServerSocket& ServerSocket::operator=(const ServerSocket& other)
 {
@@ -111,54 +111,54 @@ void ServerSocket::setNonBlocking()
 
 void ServerSocket::bindSocket()
 {
-    struct addrinfo hints;
-    struct addrinfo* res = NULL;
+	struct addrinfo hints;
+	struct addrinfo* res = NULL;
 
-    std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET; // IPv4 only
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
+	std::memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET; // IPv4 only
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
 
-    std::ostringstream oss;
-    oss << m_port;
-    std::string portStr = oss.str();
+	std::ostringstream oss;
+	oss << m_port;
+	std::string portStr = oss.str();
 
-    std::cout << "[DEBUG] Trying to bind to " << m_host << ":" << portStr << std::endl;
+	std::cout << "[DEBUG] Trying to bind to " << m_host << ":" << portStr << std::endl;
 
-    int ret = getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &res);
-    if (ret != 0)
-    {
-        std::cerr << "[ERROR] getaddrinfo failed: " << gai_strerror(ret) << std::endl;
-        throw std::runtime_error("getaddrinfo() failed");
-    }
+	int ret = getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &res);
+	if (ret != 0)
+	{
+		std::cerr << "[ERROR] getaddrinfo failed: " << gai_strerror(ret) << std::endl;
+		throw std::runtime_error("getaddrinfo() failed");
+	}
 
-    if (bind(m_fd, res->ai_addr, res->ai_addrlen) < 0)
-    {
-        perror("[ERROR] bind() failed");
-        freeaddrinfo(res);
-        std::ostringstream err;
-        err << "bind() failed on " << m_host << ":" << m_port << " - " << strerror(errno);
-        throw std::runtime_error(err.str());
-    }
-    else
-    {
-        std::cout << "[DEBUG] bind() success on fd " << m_fd << std::endl;
-    }
+	if (bind(m_fd, res->ai_addr, res->ai_addrlen) < 0)
+	{
+		perror("[ERROR] bind() failed");
+		freeaddrinfo(res);
+		std::ostringstream err;
+		err << "bind() failed on " << m_host << ":" << m_port << " - " << strerror(errno);
+		throw std::runtime_error(err.str());
+	}
+	else
+	{
+		std::cout << "[DEBUG] bind() success on fd " << m_fd << std::endl;
+	}
 
-    freeaddrinfo(res);
+	freeaddrinfo(res);
 }
 
 void ServerSocket::listenSocket()
 {
-    if (listen(m_fd, 128) < 0)
-    {
-        perror("[ERROR] listen() failed");
-        throw std::runtime_error("listen() failed: " + std::string(strerror(errno)));
-    }
-    else
-    {
-        std::cout << "[DEBUG] listen() success on fd " << m_fd << std::endl;
-    }
+	if (listen(m_fd, 128) < 0)
+	{
+		perror("[ERROR] listen() failed");
+		throw std::runtime_error("listen() failed: " + std::string(strerror(errno)));
+	}
+	else
+	{
+		std::cout << "[DEBUG] listen() success on fd " << m_fd << std::endl;
+	}
 }
 bool ServerSocket::isValid() const
 {
