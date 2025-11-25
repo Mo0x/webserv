@@ -20,7 +20,7 @@ class MultipartStreamParser
 
 	MultipartStreamParser();
 
-		void reset(const std::string& boundary,
+	void reset(const std::string& boundary,
 						PartBeginCb onBegin,
 						PartDataCb  onData,
 						PartEndCb   onEnd,
@@ -32,13 +32,11 @@ class MultipartStreamParser
 	bool isDone() const;
 
 	private:
-	// Minimal Finite State Machine + rolling buffer
-	enum S {
-			S_PREAMBLE,
-			S_HEADERS,
-			S_DATA,
-			S_DONE,
-			S_ERROR };
+	enum S {	S_PREAMBLE,
+				S_HEADERS,
+				S_DATA,
+				S_DONE,
+				S_ERROR };
 
 	enum HRes{	H_MORE,
 				H_OK,

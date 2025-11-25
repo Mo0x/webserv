@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 19:47:24 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 20:38:01 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -204,6 +204,7 @@ void SocketManager::setMultipartError(ClientState &st, int status, const std::st
 	st.multipartStatusBody = html;
 }
 
+// p == data and n == size
 bool SocketManager::feedToMultipart(int fd, ClientState &st, const char* p, size_t n)
 {
 	if (!st.isMultipart || n == 0)
@@ -856,26 +857,26 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 
 		// Check completion
 	const size_t haveTotal = st.isMultipart ? st.mpCtx.totalDecoded : st.bodyBuffer.size();
-		if (haveTotal >= want)
+	if (haveTotal >= want)
+	{
+		if (st.isMultipart && !st.mpDone())
 		{
-			if (st.isMultipart && !st.mpDone())
-			{
-				const ServerConfig &srv = findServerForClient(fd);
-				const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-				Response err = makeConfigErrorResponse(
-											srv,
-											rt,
-											400,
-											"Bad Request",
-											"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
-				finalizeAndQueue(fd, st.req, err, false, true);
-				setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
-				return false;
-			}
-			// Body complete — any remaining st.recvBuffer is pipelined next request
-			setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
-			return true;
+			const ServerConfig &srv = findServerForClient(fd);
+			const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+			Response err = makeConfigErrorResponse(
+										srv,
+										rt,
+										400,
+										"Bad Request",
+										"<h1>400 Bad Request</h1><p>Multipart ended before closing boundary.</p>");
+			finalizeAndQueue(fd, st.req, err, false, true);
+			setPhase(fd, st, ClientState::SENDING_RESPONSE, "tryReadBody");
+			return false;
 		}
+		// Body complete — any remaining st.recvBuffer is pipelined next request
+		setPhase(fd, st, ClientState::READY_TO_DISPATCH, "tryReadBody");
+		return true;
+	}
 	// Need more bytes
 	return false;
 }
@@ -1481,6 +1482,7 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 		return;
 	cs->debugMultipartBytes += n;
 
+	//file case
 	if (cs->mpCtx.writingFile && cs->mpCtx.fileFd >= 0 && !cs->multipartError)
 	{
 		size_t written = 0;
@@ -1509,6 +1511,7 @@ void SocketManager::onPartDataThunk(void* user, const char* buf, size_t n)
 			}
 		}
 	}
+	//field case
 	else if (!cs->multipartError)
 	{
 		const size_t CAP = 64 * 1024;

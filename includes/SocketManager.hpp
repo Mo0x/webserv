@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 16:58:43 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 20:10:01 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -28,12 +28,12 @@
 // -------------------------- Multipart context -------------------------------
 struct MultipartCtx
 {
-	std::vector<std::string>   savedNames;
+	std::vector<std::string> savedNames;
 	std::map<std::string,std::string> fields;
-	std::string                fieldName, safeFilename, safeFilenameRaw, fieldBuffer, pendingWrite, currentFilePath;
-	size_t                     partBytes, partCount, totalDecoded;
-	int                        fileFd;
-	bool                       writingFile;
+	std::string fieldName, safeFilename, safeFilenameRaw, fieldBuffer, pendingWrite, currentFilePath;
+	size_t partBytes, partCount, totalDecoded;
+	int fileFd;
+	bool writingFile;
 
 	MultipartCtx() : partBytes(0), partCount(0), totalDecoded(0), fileFd(-1), writingFile(false) {}
 };
