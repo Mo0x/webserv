@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 20:38:31 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 21:38:26 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -540,12 +540,12 @@ void SocketManager::queueErrorAndClose(int fd, int status,
 		std::map<int, ClientState>::iterator it = m_clients.find(fd);
 		if (it == m_clients.end())
 		{
-				ClientState fresh = ClientState();
-				setPhase(fd, fresh, ClientState::READING_HEADERS, "queueErrorAndClose");
-				fresh.forceCloseAfterWrite = false;
-				fresh.closing = false;
-				m_clients[fd] = fresh;
-				it = m_clients.find(fd);
+			ClientState fresh = ClientState();
+			setPhase(fd, fresh, ClientState::READING_HEADERS, "queueErrorAndClose");
+			fresh.forceCloseAfterWrite = false;
+			fresh.closing = false;
+			m_clients[fd] = fresh;
+			it = m_clients.find(fd);
 		}
 		ClientState &st = it->second;
 		if (st.closing)
@@ -1369,6 +1369,7 @@ static std::string makeUniqueUploadPath(const std::string &dir, const std::strin
 	return joinUploadPath(dir, stem + "_upload" + ext);
 }
 
+// we came from S_HEADER init context (mpCtx.), mainly check if it's a field (no file name) or a file
 void SocketManager::onPartBeginThunk(void* user, const std::map<std::string,std::string>& headers)
 {
 	ClientState *cs = static_cast<ClientState*>(user);
