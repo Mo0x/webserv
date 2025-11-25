@@ -20,18 +20,18 @@ class MultipartStreamParser
 
 	MultipartStreamParser();
 
-        void reset(const std::string& boundary,
-                        PartBeginCb onBegin,
-                        PartDataCb  onData,
-                        PartEndCb   onEnd,
-                        void* user);
+		void reset(const std::string& boundary,
+						PartBeginCb onBegin,
+						PartDataCb  onData,
+						PartEndCb   onEnd,
+						void* user);
 
-        Result feed(const char* data, size_t n);  // body bytes only (unchunked)
+	Result feed(const char* data, size_t n);  // body bytes only (unchunked)
 
-        int mp_state() const;
-        bool isDone() const;
+	int mp_state() const;
+	bool isDone() const;
 
-        private:
+	private:
 	// Minimal Finite State Machine + rolling buffer
 	enum S {
 			S_PREAMBLE,
@@ -48,17 +48,17 @@ class MultipartStreamParser
 				D_DONE,
 				D_ERR };
 
-	S                  m_st;
-	std::string        m_boundary;   // e.g. "----WebKit..."
-	std::string        m_delim;      // "--" + boundary
-	std::string        m_delimClose; // "--" + boundary + "--"
-	std::string        m_buf;        // rolling window for scans
-	std::map<std::string,std::string> m_curHeaders;
+	S									m_st;
+	std::string							m_boundary;   // e.g. "----WebKit..."
+	std::string							m_delim;      // "--" + boundary
+	std::string							m_delimClose; // "--" + boundary + "--"
+	std::string							m_buf;        // rolling window for scans
+	std::map<std::string,std::string>	m_curHeaders;
 
-	PartBeginCb        m_onBegin;
-	PartDataCb         m_onData;
-	PartEndCb          m_onEnd;
-	void*              m_user;
+	PartBeginCb							m_onBegin;
+	PartDataCb							m_onData;
+	PartEndCb							m_onEnd;
+	void*								m_user;
 
 	// S_PREAMBLE
 	bool consumeToFirstBoundary();

@@ -86,7 +86,8 @@ static void splitScriptAndPathInfo(const std::string &urlPath,
 
 
 //take fd and complete info for env variables mamy use illegal function tho :'(
-static void getSocketAddrs(int clientFd,
+//commenting it out but it means remoteAddr etc... CGI can work without it 
+/* static void getSocketAddrs(int clientFd,
 			   std::string &remoteAddr, std::string &remotePort,
 			   std::string &serverAddr, std::string &serverPort)
 {
@@ -119,7 +120,7 @@ static void getSocketAddrs(int clientFd,
 			serverPort = s; 
 		}
 	}
-}
+} */
 
 static std::string makeScriptName(const std::string &routePrefix,
 				  const std::string &scriptUrlPath)
@@ -355,21 +356,25 @@ void SocketManager::startCgiDispatch(int fd,
 		for (size_t i = 0; i < m_pollfds.size(); ++i)
 		{
 			int cfd = m_pollfds[i].fd;
-			if (cfd > 2) ::close(cfd);
+			if (cfd > 2)
+				::close(cfd);
 		}
 
 		// chdir to working dir
 		if (!st.cgi.workingDir.empty())
-			 ::chdir(st.cgi.workingDir.c_str());
+			::chdir(st.cgi.workingDir.c_str());
 
 		// we build argv
 		std::vector<char*> argv;
 		{
-			if (hasInterpreter) {
-				argv.push_back(const_cast<char*>(interpreterPath.c_str()));          // interpreter
-				argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // script
-			} else {
-				argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));       // direct exec (shebang)
+			if (hasInterpreter)
+			{
+				argv.push_back(const_cast<char*>(interpreterPath.c_str()));
+				argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));
+			}
+			else
+			{
+				argv.push_back(const_cast<char*>(st.cgi.scriptFsPath.c_str()));
 			}
 			argv.push_back(NULL);
 		}
@@ -378,102 +383,119 @@ void SocketManager::startCgiDispatch(int fd,
 		std::vector<std::string> env;
 		env.reserve(64);
 
-		// 1) URL parts and addresses
+		// 1) URL parts
 		std::string urlPath, query;
 		splitPathAndQuery(st.req.path, urlPath, query);
-		std::string remoteAddr, remotePort, serverAddr, serverPort;
-		getSocketAddrs(fd, remoteAddr, remotePort, serverAddr, serverPort);
 
 		std::string hostHeader;
 		{
-			std::map<std::string,std::string>::const_iterator itH=st.req.headers.find("host");
-			if (itH!=st.req.headers.end())
-				hostHeader=itH->second;
+			std::map<std::string,std::string>::const_iterator itH = st.req.headers.find("host");
+			if (itH != st.req.headers.end())
+				hostHeader = itH->second;
 		}
-		std::string serverName = server.server_name.empty() ? serverAddr : server.server_name;
-		std::string serverPortStr = serverPort;
+
+		//We compute SERVER_NAME and SERVER_PORT without getSocketAddrs()
+		std::string serverName;
+		if (!server.server_name.empty())
+			serverName = server.server_name;
+		else if (!server.host.empty())
+			serverName = server.host;
+		else
+			serverName = "localhost";
+
+		std::ostringstream portOss;
+		portOss << server.port;
+		std::string serverPortStr = portOss.str();
+
+		// If Host: header present, override SERVER_NAME / SERVER_PORT
 		if (!hostHeader.empty())
 		{
 			std::string h = hostHeader;
-			while(!h.empty() && (h[0]==' '|| h[0]=='\t')) 
-				h.erase(0,1);
-			while(!h.empty() && (h[h.size()-1]==' '|| h[h.size()-1]=='\t'))
-				h.erase(h.size()-1);
+
+			while (!h.empty() && (h[0] == ' ' || h[0] == '\t'))
+				h.erase(0, 1);
+			while (!h.empty() && (h[h.size() - 1] == ' ' || h[h.size() - 1] == '\t'))
+				h.erase(h.size() - 1);
+
 			size_t c = h.rfind(':');
 			if (c != std::string::npos)
 			{
-				serverName = h.substr(0,c); serverPortStr=h.substr(c + 1);
+				serverName    = h.substr(0, c);
+				serverPortStr = h.substr(c + 1);
 			}
-			else serverName = h;
+			else
+				serverName = h;
 		}
 
 		// 2) Core vars
 		env.push_back("GATEWAY_INTERFACE=CGI/1.1");
-		env.push_back("REQUEST_METHOD="+st.req.method);
-		env.push_back("SERVER_PROTOCOL="+st.req.http_version);
+		env.push_back("REQUEST_METHOD="   + st.req.method);
+		env.push_back("SERVER_PROTOCOL="  + st.req.http_version);
 		env.push_back("SERVER_SOFTWARE=webserv/0.1");
-		env.push_back("SERVER_NAME="+serverName);
-		env.push_back("SERVER_PORT="+serverPortStr);
+		env.push_back("SERVER_NAME="      + serverName);
+		env.push_back("SERVER_PORT="      + serverPortStr);
 
 		// SCRIPT fields
-		env.push_back("SCRIPT_FILENAME="+st.cgi.scriptFsPath);
+		env.push_back("SCRIPT_FILENAME=" + st.cgi.scriptFsPath);
 		std::string scriptUrlPath, pathInfo;
 		splitScriptAndPathInfo(urlPath, route.cgi_extension, scriptUrlPath, pathInfo);
 
 		env.push_back("SCRIPT_NAME=" + makeScriptName(route.path, scriptUrlPath));
 		if (!pathInfo.empty())
-				env.push_back("PATH_INFO=" + pathInfo);
+			env.push_back("PATH_INFO=" + pathInfo);
 
 		// REQUEST_URI & QUERY_STRING
-		env.push_back("REQUEST_URI="+urlPath+(query.empty() ? "" : "?" +query));
-		env.push_back("QUERY_STRING="+query);
+		env.push_back("REQUEST_URI="  + urlPath + (query.empty() ? "" : "?" + query));
+		env.push_back("QUERY_STRING=" + query);
 
 		// Document root
 		{
 			std::string docroot = !route.root.empty() ? route.root : server.root;
-			if (!docroot.empty()) env.push_back("DOCUMENT_ROOT="+docroot);
+			if (!docroot.empty())
+				env.push_back("DOCUMENT_ROOT=" + docroot);
 		}
 
-		// Client info
-		if (!remoteAddr.empty()) env.push_back("REMOTE_ADDR="+remoteAddr);
-		if (!remotePort.empty()) env.push_back("REMOTE_PORT="+remotePort);
+		// (Client info removed: no REMOTE_ADDR / REMOTE_PORT without getSocketAddrs see not up to getSocketAddrs)
 
 		if (!st.cgi.inBuf.empty())
 		{
 			std::ostringstream oss;
 			oss << st.cgi.inBuf.size();
-			env.push_back("CONTENT_LENGTH="+ oss.str());
+			env.push_back("CONTENT_LENGTH=" + oss.str());
 		}
 		{
-			std::map<std::string,std::string>::const_iterator itCT=st.req.headers.find("content-type");
-			if (itCT!=st.req.headers.end()) 
-				env.push_back("CONTENT_TYPE="+itCT->second);
+			std::map<std::string,std::string>::const_iterator itCT = st.req.headers.find("content-type");
+			if (itCT != st.req.headers.end())
+				env.push_back("CONTENT_TYPE=" + itCT->second);
 		}
 
-		for (std::map<std::string,std::string>::const_iterator it=st.req.headers.begin(); it!=st.req.headers.end(); ++it)
+		for (std::map<std::string,std::string>::const_iterator it = st.req.headers.begin();
+			it != st.req.headers.end(); ++it)
 		{
 			const std::string &k = it->first;
 			if (k == "content-type" || k == "content-length")
 				continue;
-			env.push_back("HTTP_"+ httpKeyToCgiVar(k) + "=" +it->second);
+			env.push_back("HTTP_" + httpKeyToCgiVar(k) + "=" + it->second);
 		}
 
-		for (size_t i=0;i < route.cgi_pass_env.size();++i)
+		for (size_t i = 0; i < route.cgi_pass_env.size(); ++i)
 		{
 			const std::string &key = route.cgi_pass_env[i];
 			const char *v = std::getenv(key.c_str());
 			if (v && *v)
-				env.push_back(key+"="+std::string(v));
+				env.push_back(key + "=" + std::string(v));
 		}
 
 		// Convert to char*[]
-		std::vector<char*> envp; envp.reserve(env.size()+1);
-		for (size_t i=0;i<env.size();++i) envp.push_back(const_cast<char*>(env[i].c_str()));
+		std::vector<char*> envp;
+		envp.reserve(env.size() + 1);
+		for (size_t i = 0; i < env.size(); ++i)
+			envp.push_back(const_cast<char*>(env[i].c_str()));
 		envp.push_back(NULL);
 
 		// exec
 		::execve(argv[0], &argv[0], &envp[0]);
-		_exit(127); // exec failed LEGAL ??? TODO CHECK 98 cpp
+		std::exit(127);
 	}
 
 	// ---- PARENT ----

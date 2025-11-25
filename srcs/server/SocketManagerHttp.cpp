@@ -621,13 +621,13 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 		hdrEndPos = st.recvBuffer.size(); // defensive
 	st.recvBuffer.erase(0, hdrEndPos);
 	// 2) Decide the next phase + optionally move already-received body bytes (CL case)
-		if (st.isChunked)
-		{
-				// For chunked, we don't pre-consume here. The chunk decoder will
-				// pull from st.recvBuffer during tryReadBody.
-				setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
-				return;
-		}
+	if (st.isChunked)
+	{
+			// For chunked, we don't pre-consume here. The chunk decoder will
+			// pull from st.recvBuffer during tryReadBody.
+			setPhase(fd, st, ClientState::READING_BODY, "finalizeHeaderPhaseTransition");
+			return;
+	}
 
 	// Non-chunked framing
 	if (st.contentLength > 0)
@@ -687,38 +687,37 @@ bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
 		if (st.req.method != "POST")
 				return true;
 
-		// If this request is not multipart, no additional setup is required.
 		if (!st.isMultipart)
 				return true;
 
 		if (st.multipartBoundary.empty())
 		{
-				const ServerConfig &srv = findServerForClient(fd);
-				const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-				Response err = makeConfigErrorResponse(
-						srv,
-						rt,
-						400,
-						"Bad Request",
-						"<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
-				);
-				finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-				return false;
+			const ServerConfig &srv = findServerForClient(fd);
+			const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+			Response err = makeConfigErrorResponse(
+					srv,
+					rt,
+					400,
+					"Bad Request",
+					"<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
+			);
+			finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+			return false;
 		}
 
 		const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
 		const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
 		if (!route || route->upload_path.empty())
 		{
-				Response err = makeConfigErrorResponse(
-						server,
-						route,
-						403,
-						"Forbidden",
-						"<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
-				);
-				finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-				return false;
+			Response err = makeConfigErrorResponse(
+					server,
+					route,
+					403,
+					"Forbidden",
+					"<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
+			);
+			finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+			return false;
 		}
 
 		st.uploadDir = route->upload_path;
