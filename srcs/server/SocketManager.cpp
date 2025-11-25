@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 21:52:14 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 21:52:45 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1180,18 +1180,17 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 	const bool body_fully_consumed    = true;
 	const bool client_close           = true; // <- force close in no-context paths
 
-		const bool close_it = shouldCloseAfterThisResponse(
-				/*status_code*/ res.status_code,
-				headers_complete,
-				body_expected,
-				body_fully_consumed,
-				client_close
-		);
-		const bool force_close = close_it || st.closing;
-		res.close_connection = force_close;
+	const bool close_it = shouldCloseAfterThisResponse(
+			/*status_code*/ res.status_code,
+			headers_complete,
+			body_expected,
+			body_fully_consumed,
+			client_close);
+	const bool force_close = close_it || st.closing;
+	res.close_connection = force_close;
 
-		st.writeBuffer = build_http_response(res);
-		st.forceCloseAfterWrite = force_close;
+	st.writeBuffer = build_http_response(res);
+	st.forceCloseAfterWrite = force_close;
 	setPhase(fd, st, ClientState::SENDING_RESPONSE, "finalizeAndQueue");
 	tryFlushWrite(fd, st);
 }
