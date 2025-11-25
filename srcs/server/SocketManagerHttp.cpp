@@ -683,57 +683,57 @@ void SocketManager::finalizeHeaderPhaseTransition (int fd, ClientState &st, size
 
 bool SocketManager::doTheMultiPartThing(int fd, ClientState &st)
 {
-		// Only enforce multipart handling for POST uploads; other methods proceed unchanged.
-		if (st.req.method != "POST")
-				return true;
+	// Only enforce multipart handling for POST uploads; other methods proceed unchanged.
+	if (st.req.method != "POST")
+			return true;
 
-		if (!st.isMultipart)
-				return true;
+	if (!st.isMultipart)
+			return true;
 
-		if (st.multipartBoundary.empty())
-		{
-			const ServerConfig &srv = findServerForClient(fd);
-			const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
-			Response err = makeConfigErrorResponse(
-					srv,
-					rt,
-					400,
-					"Bad Request",
-					"<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
-			);
-			finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-			return false;
-		}
+	if (st.multipartBoundary.empty())
+	{
+		const ServerConfig &srv = findServerForClient(fd);
+		const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
+		Response err = makeConfigErrorResponse(
+				srv,
+				rt,
+				400,
+				"Bad Request",
+				"<h1>400 Bad Request</h1><p>Missing multipart boundary.</p>"
+		);
+		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+		return false;
+	}
 
-		const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
-		const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
-		if (!route || route->upload_path.empty())
-		{
-			Response err = makeConfigErrorResponse(
-					server,
-					route,
-					403,
-					"Forbidden",
-					"<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
-			);
-			finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-			return false;
-		}
+	const ServerConfig &server = m_serversConfig[m_clientToServerIndex[fd]];
+	const RouteConfig  *route  = findMatchingLocation(server, st.req.path);
+	if (!route || route->upload_path.empty())
+	{
+		Response err = makeConfigErrorResponse(
+				server,
+				route,
+				403,
+				"Forbidden",
+				"<h1>403 Forbidden</h1><p>Uploads are not allowed on this route.</p>"
+		);
+		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+		return false;
+	}
 
-		st.uploadDir = route->upload_path;
+	st.uploadDir = route->upload_path;
 
-		// Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
-		resetMultipartState(st);
-		st.multipartInit = false;
-		st.mpState = ClientState::MP_START;
+	// Prepare per-request multipart bookkeeping so body streaming can begin once we enter READING_BODY.
+	resetMultipartState(st);
+	st.multipartInit = false;
+	st.mpState = ClientState::MP_START;
 
-		st.mp.reset(st.multipartBoundary,
-					&SocketManager::onPartBeginThunk,
-					&SocketManager::onPartDataThunk,
-					&SocketManager::onPartEndThunk,
-					&st);
-		st.multipartInit = true;
-		return true;
+	st.mp.reset(st.multipartBoundary,
+				&SocketManager::onPartBeginThunk,
+				&SocketManager::onPartDataThunk,
+				&SocketManager::onPartEndThunk,
+				&st);
+	st.multipartInit = true;
+	return true;
 }
 
 bool SocketManager::tryParseHeaders(int fd, ClientState &st)
