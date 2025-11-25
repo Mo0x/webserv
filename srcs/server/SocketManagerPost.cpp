@@ -437,7 +437,6 @@ void SocketManager::startCgiDispatch(int fd,
 		if (!remoteAddr.empty()) env.push_back("REMOTE_ADDR="+remoteAddr);
 		if (!remotePort.empty()) env.push_back("REMOTE_PORT="+remotePort);
 
-		// CONTENT_* (use actual stdin size we feed)
 		if (!st.cgi.inBuf.empty())
 		{
 			std::ostringstream oss;

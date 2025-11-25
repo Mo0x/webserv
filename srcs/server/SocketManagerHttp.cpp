@@ -215,7 +215,7 @@ bool SocketManager::detectMultipartBoundary(int fd, ClientState &st)
 			}
 			if (nextSemi == std::string::npos)
 				break;
-				pos = nextSemi + 1;
+			pos = nextSemi + 1; //if something broke its here
 		}
 
 		if (!boundaryFound || boundaryValue.empty())
