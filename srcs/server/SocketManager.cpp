@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/24 20:43:12 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 16:58:43 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -1219,6 +1219,7 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 // has already closed the connection, the kernel may raise SIGPIPE, 
 // which by default kills the process. -> dont want this on a server ! 
 //MSG_NOSIGNAL = this would normally raise SIGPIPE, don’t send the signal; just return -1 with errno = EPIPE
+// now that we dont use errno idk if its useful, keeping it for the pre-proc style
 bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 {
 

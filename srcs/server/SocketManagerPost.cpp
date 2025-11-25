@@ -88,19 +88,17 @@ static void getSocketAddrs(int clientFd,
     sockaddr_storage peer; socklen_t plen = sizeof(peer);
     if (::getpeername(clientFd, (sockaddr*)&peer, &plen) == 0)
     {
-	char h[NI_MAXHOST]; char s[NI_MAXSERV];
-	if (::getnameinfo((sockaddr*)&peer, plen, h, sizeof(h), s, sizeof(s),
-			  NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-	{ remoteAddr = h; remotePort = s; }
+		char h[NI_MAXHOST]; char s[NI_MAXSERV];
+		if (::getnameinfo((sockaddr*)&peer, plen, h, sizeof(h), s, sizeof(s), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+			remoteAddr = h; remotePort = s;
     }
 
     sockaddr_storage self; socklen_t slen = sizeof(self);
     if (::getsockname(clientFd, (sockaddr*)&self, &slen) == 0)
     {
-	char h[NI_MAXHOST]; char s[NI_MAXSERV];
-	if (::getnameinfo((sockaddr*)&self, slen, h, sizeof(h), s, sizeof(s),
-			  NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-	{ serverAddr = h; serverPort = s; }
+		char h[NI_MAXHOST]; char s[NI_MAXSERV];
+		if (::getnameinfo((sockaddr*)&self, slen, h, sizeof(h), s, sizeof(s), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+			serverAddr = h; serverPort = s; 
     }
 }
 
@@ -213,11 +211,9 @@ void SocketManager::startCgiDispatch(int fd,
 	std::string query;
 	splitPathAndQuery(st.req.path, urlPath, query);
 
-	// Decide working directory: prefer cgi_path, else route.root, else server.root
 	std::string workingDir = !route.cgi_path.empty() ? route.cgi_path
 						: (!route.root.empty()   ? route.root : server.root);
 
-	// Map URL to filesystem path under workingDir
 	const std::string rel  = stripLocationPrefix(urlPath, route.path);
 	const std::string scriptFsPath = joinPaths(workingDir, rel);
 
@@ -240,7 +236,7 @@ void SocketManager::startCgiDispatch(int fd,
 			interpreterPath = itInterp->second;
 		}
 	}
-	st.cgi.inBuf.swap(st.bodyBuffer);    // move decoded request body to CGI stdin buffer
+	st.cgi.inBuf.swap(st.bodyBuffer);// move decoded request body to CGI stdin buffer
 	st.cgi.tStartMs      = now_ms();
 	st.cgi.stdin_w       = -1;
 	st.cgi.stdout_r      = -1;
@@ -257,10 +253,10 @@ void SocketManager::startCgiDispatch(int fd,
 	st.multipartStatusTitle.clear();
 	st.multipartStatusBody.clear();
 
-	// Flip outer phase — the event loop will later spawn/drive the CGI
+	// We flip CS state to cgi running
 	setPhase(fd, st, ClientState::CGI_RUNNING, "startCgiDispatch");
 
-	// Resolve the script path securely before spawning
+	// Resolve the script path
 	char realBuf[PATH_MAX];
 	if (!::realpath(st.cgi.scriptFsPath.c_str(), realBuf))
 	{
@@ -286,7 +282,7 @@ void SocketManager::startCgiDispatch(int fd,
 		finalizeAndQueue(fd, st.req, res, false, true);
 		return;
 	}
-	if (!S_ISREG(sb.st_mode))
+	if (!S_ISREG(sb.st_mode)) //S_ISREG check if the return from stat is a regular file
 	{
 		Response res = makeConfigErrorResponse(server, &route, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1><p>CGI script is not a regular file.</p>");
 		finalizeAndQueue(fd, st.req, res, false, true);
@@ -320,18 +316,23 @@ void SocketManager::startCgiDispatch(int fd,
 	}
 	st.cgi.scriptFsPath = absScript;
 
-	// ---------- SPAWN + PIPE (O_NONBLOCK) + REGISTER -----------------
+	// we do the pipex thingy here
 	int inPipe[2], outPipe[2];
 	if (::pipe(inPipe)  < 0 || ::pipe(outPipe) < 0) {
 		Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>pipe() failed.</p>");
-		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
+		finalizeAndQueue(fd, st.req, err, false, true);
 		return;
 	}
 	int fl;
-	fl = fcntl(inPipe[1], F_GETFL, 0);  if (fl != -1) fcntl(inPipe[1], F_SETFL, fl | O_NONBLOCK);
-	fl = fcntl(outPipe[0], F_GETFL, 0); if (fl != -1) fcntl(outPipe[0], F_SETFL, fl | O_NONBLOCK);
+	fl = fcntl(inPipe[1], F_GETFL, 0);
+	if (fl != -1) 
+		fcntl(inPipe[1], F_SETFL, fl | O_NONBLOCK);
+	fl = fcntl(outPipe[0], F_GETFL, 0);
+	if (fl != -1)
+		fcntl(outPipe[0], F_SETFL, fl | O_NONBLOCK);
 	pid_t pid = ::fork();
-	if (pid < 0) {
+	if (pid < 0)
+	{
 		::close(inPipe[0]); ::close(inPipe[1]);
 		::close(outPipe[0]); ::close(outPipe[1]);
 		Response err = makeConfigErrorResponse(server, &route, 502, "Bad Gateway", "<h1>502 Bad Gateway</h1><p>fork() failed.</p>");
@@ -339,18 +340,17 @@ void SocketManager::startCgiDispatch(int fd,
 		return;
 	}
 
+	// child code behind
 	if (pid == 0) 
 	{
-		// ---- CHILD ----
 		// stdio hookup
 		::dup2(inPipe[0],  STDIN_FILENO);
 		::dup2(outPipe[1], STDOUT_FILENO);
 		// close inherited ends we don't need
 		::close(inPipe[1]); ::close(outPipe[0]);
 
-		// close any listening/client fds you keep in m_pollfds to avoid leaks in child
-		// (Optional: iterate and close every fd except 0/1/2)
-		for (size_t i = 0; i < m_pollfds.size(); ++i) {
+		for (size_t i = 0; i < m_pollfds.size(); ++i)
+		{
 			int cfd = m_pollfds[i].fd;
 			if (cfd > 2) ::close(cfd);
 		}
@@ -359,7 +359,7 @@ void SocketManager::startCgiDispatch(int fd,
 		if (!st.cgi.workingDir.empty())
 			 ::chdir(st.cgi.workingDir.c_str());
 
-		// ---- Build argv (use FS extension, not URL) ----
+		// we build argv
 		std::vector<char*> argv;
 		{
 			if (hasInterpreter) {
@@ -371,7 +371,7 @@ void SocketManager::startCgiDispatch(int fd,
 			argv.push_back(NULL);
 		}
 
-		// ---- Build envp (RFC 3875 core) ----
+		// we build env
 		std::vector<std::string> env;
 		env.reserve(64);
 
@@ -380,7 +380,6 @@ void SocketManager::startCgiDispatch(int fd,
 		std::string remoteAddr, remotePort, serverAddr, serverPort;
 		getSocketAddrs(fd, remoteAddr, remotePort, serverAddr, serverPort);
 
-		// SERVER_NAME/PORT (prefer Host header if present)
 		std::string hostHeader;
 		{
 			std::map<std::string,std::string>::const_iterator itH=st.req.headers.find("host");
@@ -392,10 +391,15 @@ void SocketManager::startCgiDispatch(int fd,
 		if (!hostHeader.empty())
 		{
 			std::string h = hostHeader;
-			while(!h.empty()&&(h[0]==' '||h[0]=='\t')) h.erase(0,1);
-			while(!h.empty()&&(h[h.size()-1]==' '||h[h.size()-1]=='\t')) h.erase(h.size()-1);
+			while(!h.empty()&&(h[0]==' '|| h[0]=='\t')) 
+				h.erase(0,1);
+			while(!h.empty()&&(h[h.size()-1]==' '|| h[h.size()-1]=='\t'))
+				h.erase(h.size()-1);
 			size_t c=h.rfind(':');
-			if (c!=std::string::npos) { serverName=h.substr(0,c); serverPortStr=h.substr(c+1); }
+			if (c!=std::string::npos)
+			{
+				serverName=h.substr(0,c); serverPortStr=h.substr(c+1);
+			}
 			else serverName=h;
 		}
 
@@ -409,11 +413,12 @@ void SocketManager::startCgiDispatch(int fd,
 
 		// SCRIPT fields
 		env.push_back("SCRIPT_FILENAME="+st.cgi.scriptFsPath);
-			std::string scriptUrlPath, pathInfo;
-			splitScriptAndPathInfo(urlPath, route.cgi_extension, scriptUrlPath, pathInfo);
+		std::string scriptUrlPath, pathInfo;
+		splitScriptAndPathInfo(urlPath, route.cgi_extension, scriptUrlPath, pathInfo);
 
-			env.push_back("SCRIPT_NAME=" + makeScriptName(route.path, scriptUrlPath));
-			if (!pathInfo.empty()) env.push_back("PATH_INFO=" + pathInfo);
+		env.push_back("SCRIPT_NAME=" + makeScriptName(route.path, scriptUrlPath));
+		if (!pathInfo.empty())
+				env.push_back("PATH_INFO=" + pathInfo);
 
 		// REQUEST_URI & QUERY_STRING
 		env.push_back("REQUEST_URI="+urlPath+(query.empty()?"":"?"+query));
@@ -472,14 +477,16 @@ void SocketManager::startCgiDispatch(int fd,
 	st.cgi.stdout_r = outPipe[0];
 
 	// If empty body, close stdin immediately (CGI often waits for EOF)
-	if (st.cgi.inBuf.empty()) {
+	if (st.cgi.inBuf.empty())
+	{
 		::close(st.cgi.stdin_w);
 		st.cgi.stdin_w = -1;
 		st.cgi.stdin_closed = true;
-	} else {
+	}
+	else
+	{
 		st.cgi.stdin_closed = false;
 	}
-
 	// Register pipe fds in poll()
 	addPollFd(st.cgi.stdout_r, POLLIN);
 	m_cgiStdoutToClient[st.cgi.stdout_r] = fd;

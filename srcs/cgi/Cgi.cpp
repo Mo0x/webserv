@@ -54,7 +54,6 @@ void SocketManager::checkCgiTimeouts()
 			continue;
 
 		// Already parsed CGI headers → we've already sent/started a response,
-		// do NOT try to send a 504 for this one.
 		if (st.cgi.headersParsed)
 			continue;
 
@@ -125,9 +124,6 @@ void SocketManager::checkCgiTimeouts()
 					"<h1>504 Gateway Timeout</h1>");
 
 		finalizeAndQueue(fd, st.req, err, /*body_expected=*/false, /*body_fully_consumed=*/true);
-
-		// DO NOT call handleClientDisconnect(fd) here.
-		// Let your normal SENDING_RESPONSE/keep-alive logic close it.
 	}
 }
 

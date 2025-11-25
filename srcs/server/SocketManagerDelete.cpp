@@ -87,14 +87,14 @@ void SocketManager::handleDelete(int fd,
 
 	// unlink failed
 	int err = errno;
-        if (err == EACCES || err == EPERM)
-        {
-                Response res = makeConfigErrorResponse(server, r, 403, "Forbidden", "<h1>403 Forbidden</h1>");
-                finalizeAndQueue(fd, req, res, false, true);
-                return;
-        }
+	if (err == EACCES || err == EPERM)
+	{
+			Response res = makeConfigErrorResponse(server, r, 403, "Forbidden", "<h1>403 Forbidden</h1>");
+			finalizeAndQueue(fd, req, res, false, true);
+			return;
+	}
 
-        // Generic server error
-        Response res = makeConfigErrorResponse(server, r, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1>");
-        finalizeAndQueue(fd, req, res, false, true);
+	// Generic server error
+	Response res = makeConfigErrorResponse(server, r, 500, "Internal Server Error", "<h1>500 Internal Server Error</h1>");
+	finalizeAndQueue(fd, req, res, false, true);
 }

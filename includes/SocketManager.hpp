@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:22 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/23 20:23:27 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 16:58:43 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -140,7 +140,6 @@ class SocketManager
 	void handleClientWrite(int fd);
 
 	// Connection / server context
-	//std::string buildErrorResponse(int code, const ServerConfig &server); REPLACING BY A NEW ONE THAT RETURN A RESPONSE
 	const ServerConfig& findServerForClient(int fd) const;
 	bool clientRequestedClose(const Request &req) const;
 
