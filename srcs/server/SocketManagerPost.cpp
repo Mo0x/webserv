@@ -84,27 +84,40 @@ static void splitScriptAndPathInfo(const std::string &urlPath,
 	pathInfo.clear();
 }
 
+
+//take fd and complete info for env variables
 static void getSocketAddrs(int clientFd,
 			   std::string &remoteAddr, std::string &remotePort,
 			   std::string &serverAddr, std::string &serverPort)
 {
-	remoteAddr.clear(); remotePort.clear();
-	serverAddr.clear(); serverPort.clear();
+	remoteAddr.clear();
+	remotePort.clear();
+	serverAddr.clear();
+	serverPort.clear();
 
-	sockaddr_storage peer; socklen_t plen = sizeof(peer);
+	sockaddr_storage peer;
+	socklen_t plen = sizeof(peer);
 	if (::getpeername(clientFd, (sockaddr*)&peer, &plen) == 0)
 	{
-		char h[NI_MAXHOST]; char s[NI_MAXSERV];
+		char h[NI_MAXHOST];
+		char s[NI_MAXSERV];
 		if (::getnameinfo((sockaddr*)&peer, plen, h, sizeof(h), s, sizeof(s), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-			remoteAddr = h; remotePort = s;
+		{
+			remoteAddr = h;
+			remotePort = s;
+		}
 	}
 
 	sockaddr_storage self; socklen_t slen = sizeof(self);
 	if (::getsockname(clientFd, (sockaddr*)&self, &slen) == 0)
 	{
-		char h[NI_MAXHOST]; char s[NI_MAXSERV];
+		char h[NI_MAXHOST];
+		char s[NI_MAXSERV];
 		if (::getnameinfo((sockaddr*)&self, slen, h, sizeof(h), s, sizeof(s), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-			serverAddr = h; serverPort = s; 
+		{
+			serverAddr = h;
+			serverPort = s; 
+		}
 	}
 }
 
@@ -164,8 +177,7 @@ static std::string makeUploadFileName(const std::string &hint)
 	static unsigned long s_counter = 0;
 	++s_counter;
 
-	// avoid slash from hint
-
+	// avoid slash 
 	std::string base = hint;
 	size_t pos = base.rfind('/');
 	if (pos != std::string::npos)
