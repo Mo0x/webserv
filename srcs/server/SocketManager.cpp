@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 21:38:26 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 21:51:19 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -750,9 +750,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 			{
 				st.closing = true;
 				st.recvBuffer.clear();
-#ifdef SHUT_RD
-				::shutdown(fd, SHUT_RD);
-#endif
+
 				const ServerConfig &srv = findServerForClient(fd);
 				const RouteConfig *rt = st.req.path.empty() ? NULL : findMatchingLocation(srv, st.req.path);
 				Response err = makeConfigErrorResponse(srv,
@@ -932,6 +930,7 @@ void SocketManager::finalizeRequestAndQueueResponse(int fd, ClientState &st)
 	std::cerr << "[fd " << fd << "] queued fallback response" << std::endl;
 }
 
+// this the v3.5 full commented because with run() it's where the real deal occurs
 void SocketManager::handleClientRead(int fd)
 {
 	std::map<int, ClientState>::iterator it = m_clients.find(fd);
