@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 17:49:52 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/25 17:54:35 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,7 +31,6 @@
 
 
 extern volatile sig_atomic_t g_stop;
-// ============================ ClientState ====================================
 bool ClientState::mpDone() const
 {
 	return mp.isDone();
@@ -123,7 +122,6 @@ bool SocketManager::tryCgiDispatchNow(int fd,
 	return true;
 }
 
-// --- Multipart housekeeping -------------------------------------------------
 void SocketManager::resetMultipartState(ClientState &st)
 {
 	if (st.mpCtx.fileFd >= 0)
@@ -456,8 +454,8 @@ bool SocketManager::isListeningSocket(int fd) const
 
 void SocketManager::handleNewConnection(int listen_fd)
 {
-	sockaddr_storage sa;
-	socklen_t        slen = sizeof(sa);
+	sockaddr_storage	sa;
+	socklen_t			slen = sizeof(sa);
 
 	int client_fd = accept(listen_fd, reinterpret_cast<sockaddr*>(&sa), &slen);
 	if (client_fd < 0)
@@ -488,33 +486,24 @@ void SocketManager::handleNewConnection(int listen_fd)
 		}
 	}
 
-		ClientState st = ClientState();
-		setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
-		st.recvBuffer     = std::string();
-		st.bodyBuffer     = std::string();
-		st.isChunked      = false;
-		st.contentLength  = 0;
-		st.maxBodyAllowed = 0;
-		st.writeBuffer.clear();
-		st.forceCloseAfterWrite = false;
-		st.closing = false;
-		st.isMultipart = false;
-		st.multipartInit = false;
-		st.multipartBoundary.clear();
-		st.mpState = ClientState::MP_START;
-		st.mp = MultipartStreamParser();
-		resetMultipartState(st);
-		// If your ChunkedDecoder exposes a reset(), call it; otherwise this is a no-op line.
+	ClientState st = ClientState();
+	setPhase(client_fd, st, ClientState::READING_HEADERS, "handleNewConnection");
+	st.recvBuffer     = std::string();
+	st.bodyBuffer     = std::string();
+	st.isChunked      = false;
+	st.contentLength  = 0;
+	st.maxBodyAllowed = 0;
+	st.writeBuffer.clear();
+	st.forceCloseAfterWrite = false;
+	st.closing = false;
+	st.isMultipart = false;
+	st.multipartInit = false;
+	st.multipartBoundary.clear();
+	st.mpState = ClientState::MP_START;
+	st.mp = MultipartStreamParser();
+	resetMultipartState(st);
 
-		m_clients[client_fd] = st;
-
-	// If you track per-fd pending-write flags/queues, clear them here to avoid
-	// the "skip read: pending write" early-return on fresh connections.
-	// e.g. m_writeQueue.erase(client_fd); or clearPendingWriteFor(client_fd);
-	// (leave as a comment if you don’t have such a structure)
-	// clearPendingWriteFor(client_fd);
-
-	// Optional: immediate trace so you’ll see the state machine start on next loop
+	m_clients[client_fd] = st;
 	std::cerr << "[fd " << client_fd << "] inserted in m_clients, phase=READING_HEADERS" << std::endl;
 }
 
@@ -568,7 +557,7 @@ void SocketManager::queueErrorAndClose(int fd, int status,
 			route = findMatchingLocation(srv, st.req.path);
 
 		Response res = makeConfigErrorResponse(srv, route, status, title, html);
-		res.close_connection = true;     // must close on these paths
+		res.close_connection = true;
 		
 		finalizeAndQueue(fd, res);
 }
@@ -596,7 +585,7 @@ void SocketManager::dispatchRequest(int fd, const Request &req,
 									const ServerConfig &server,
 									const std::string &methodUpper)
 {
-	// ---- dispatch: static/autoindex/redirect --------------------------------
+	// dispatch: static/autoindex/redirect 
 	const RouteConfig* route = findMatchingLocation(server, req.path);
 
 	std::string effectiveRoot  = (route && !route->root.empty())  ? route->root  : server.root;
@@ -722,7 +711,7 @@ bool SocketManager::tryReadBody(int fd, ClientState &st)
 	if (handleMultipartFailure(fd, st))
 		return false;
 
-	// --- CHUNKED TRANSFER ---------------------------------------------------
+	// CHUNKED TRANSFER
 	if (st.isChunked)
 	{
 		for (;;)
@@ -1304,7 +1293,6 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	const bool is11 = (hv.size() >= 8 && hv.compare(0, 8, "HTTP/1.1") == 0);
 	const bool is10 = (hv.size() >= 8 && hv.compare(0, 8, "HTTP/1.0") == 0);
 
-	// Header keys are lowercased at parse time (Step 1); use "connection"
 	std::string connVal;
 	std::map<std::string, std::string>::const_iterator it = req.headers.find("connection");
 	if (it != req.headers.end())
@@ -1316,9 +1304,9 @@ bool SocketManager::clientRequestedClose(const Request &req) const
 	connVal = trimCopy(connVal);
 
 	if (is11)
-		return (connVal == "close");               // HTTP/1.1: keep-alive by default
+		return (connVal == "close");// HTTP/1.1: keep-alive by default
 	if (is10)
-		return (connVal != "keep-alive");          // HTTP/1.0: close unless explicitly keep-alive
+		return (connVal != "keep-alive");// HTTP/1.0: close unless explicitly keep-alive
 
 	return true;
 }
