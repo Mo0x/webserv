@@ -448,11 +448,12 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
 	std::map<std::string, std::string> merged; // simple merge for non-duplicate headers
 	std::vector<std::string> setCookieLines;   // keep raw duplicate Set-Cookie
 	size_t start = 0;
-	while (start < delim) {
-		// find EOL
+	while (start < delim)
+	{
 		size_t eol = st.cgi.outBuf.find("\r\n", start);
 		size_t adv = 2;
-		if (eol == std::string::npos || eol >= delim) {
+		if (eol == std::string::npos || eol >= delim)
+		{
 			eol = st.cgi.outBuf.find('\n', start);
 			if (eol == std::string::npos || eol >= delim) break;
 			adv = 1;
@@ -463,7 +464,8 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
 
 		// split at ':'
 		size_t colon = line.find(':');
-		if (colon == std::string::npos) {
+		if (colon == std::string::npos)
+		{
 			// ignore invalid header line (tolerant)
 			continue;
 		}
@@ -473,14 +475,17 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd, const RouteCo
 		while (!val.empty() && (val[0] == ' ' || val[0] == '\t')) val.erase(0,1);
 		key = toLowerCopy(key);
 
-		if (key == "set-cookie") {
+		if (key == "set-cookie")
+		{
 			setCookieLines.push_back("Set-Cookie: " + val);
 			continue;
 		}
 		// merge others (comma-join)
 		std::map<std::string,std::string>::iterator it = merged.find(key);
-		if (it == merged.end()) merged[key] = val;
-		else                    it->second += std::string(",") + val;
+		if (it == merged.end())
+			merged[key] = val;
+		else
+			it->second += std::string(",") + val;
 	}
 
 	// Drop header block from outBuf
