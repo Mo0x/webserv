@@ -205,12 +205,7 @@ void ChunkedDecoder::handleTrailersState(const char *buf, size_t len, size_t &i)
 			}
 			// else: it's just a trailer header (e.g. "Checksum: deadbeef")
 			// ignore it and keep looping to read more trailers
-		}
-	}
-}
-
-void ChunkedDecoder::drainTo(std::string &dst)
-{
+		} } } void ChunkedDecoder::drainTo(std::string &dst) {
 	if (!m_data.empty())
 	{
 		dst.append(m_data);
@@ -240,7 +235,7 @@ size_t ChunkedDecoder::feed(const char *buf, size_t len, size_t max_body_size)
 				handleCrlfState(buf, len, i);
 				break;
 			case S_TRAILERS :
-				handleTrailersState(buf, len, i);
+				handleTrailersState(buf, len, i); 
 				break;
 			default :
 				break;
