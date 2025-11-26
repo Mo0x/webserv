@@ -1125,20 +1125,49 @@ void SocketManager::finalizeAndQueue(int fd, Response &res)
 bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 {
 
-	if (st.writeBuffer.empty())
-	{
-		clearPollout(fd);
-		if (st.forceCloseAfterWrite || st.closing)
-		{
-			handleClientDisconnect(fd);
-			return false;
-		}
+        if (st.writeBuffer.empty())
+        {
+                clearPollout(fd);
 
-		st.forceCloseAfterWrite = false;
-		st.closing = false;
-		setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
-		return true;
-	}
+                // When a CGI response is streaming, we can temporarily empty the
+                // write buffer while still waiting for more stdout from the CGI
+                // child. Do not reset the client state in that situation; just
+                // wait for the next POLLIN on the CGI pipe. If stdout was
+                // previously paused due to backpressure, resume it now that the
+                // buffer is drained.
+                if (st.cgi.stdout_r != -1)
+                {
+                        maybeResumeCgiStdout(fd, st);
+                        return true;
+                }
+
+                if (st.forceCloseAfterWrite || st.closing)
+                {
+                        handleClientDisconnect(fd);
+                        return false;
+                }
+
+                st.forceCloseAfterWrite = false;
+                st.closing = false;
+
+                // Reset CGI bookkeeping after the response is fully flushed.
+                st.cgi.reset();
+
+                st.req = Request();
+                st.bodyBuffer.clear();
+                st.isChunked = false;
+                st.contentLength = 0;
+                st.maxBodyAllowed = 0;
+                st.chunkDec = ChunkedDecoder();
+                st.isMultipart = false;
+                st.multipartInit = false;
+                st.multipartBoundary.clear();
+                st.mpState = ClientState::MP_START;
+                st.mp = MultipartStreamParser();
+                resetMultipartState(st);
+                setPhase(fd, st, ClientState::READING_HEADERS, "tryFlushWrite");
+                return true;
+        }
 
 	// here we have just one send() from the subject and we dont check errno after it
 #ifdef MSG_NOSIGNAL
@@ -1155,8 +1184,11 @@ bool SocketManager::tryFlushWrite(int fd, ClientState &st)
 	// here we know we sent something so we delete that from writeBuffer
 	st.writeBuffer.erase(0, static_cast<size_t>(n));
 
-	if (st.phase == ClientState::CGI_RUNNING)
-		maybeResumeCgiStdout(fd, st);
+        if (st.cgi.stdout_r != -1)
+        {
+                maybeResumeCgiStdout(fd, st);
+                return true;
+        }
 
 	// keep POLLOUT till we send everything
 	if (!st.writeBuffer.empty())
