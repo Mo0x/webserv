@@ -60,3 +60,9 @@ You should see:
 
 
 THEN HAVE SOME FUN WITH : cgi_infinite_loop.py and cgi_sleep_long.py for timeout 
+
+curl -v \
+  -X POST \
+  -H "Content-Type: text/plain" \
+  --data 'hello from CGI body\nsecond line' \
+  "http://127.0.0.1:8080/cgi-bin/debug.py"

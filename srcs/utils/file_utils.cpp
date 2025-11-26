@@ -111,7 +111,7 @@ bool isPathSafe(const std::string& basePath, const std::string& fullPath)
 	return false;
 }
 
-
+// previous isPathSafe
 /* bool isPathSafe(const std::string& basePath, const std::string& fullPath)
 {
 		//use realpth to resolve things like "." ->current dir
