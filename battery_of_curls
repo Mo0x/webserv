@@ -32,10 +32,10 @@ B. Methods & 405 / unknown method
 3. Method-restricted route (/post-only/)
 
 # Wrong method – should hit 405
-curl -v -X GET http://127.0.0.1:8080/post-only/
+curl -v -X GET http://127.0.0.1:8080/post_only/
 
 # Another wrong method
-curl -v -X DELETE http://127.0.0.1:8080/post-only/
+curl -v -X DELETE http://127.0.0.1:8080/post_only/
 
 
 Expect: 405 Method Not Allowed, error page 405, and ideally Allow: POST header.
