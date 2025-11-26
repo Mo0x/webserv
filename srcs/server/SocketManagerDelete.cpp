@@ -1,19 +1,12 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
+#include <cstdio>
 
 #include "SocketManager.hpp"
 #include "file_utils.hpp"
 #include "request_response_struct.hpp"
 #include "utils.hpp"
-
-// DELETE-specific helpers factored out of SocketManager.cpp for clarity.
-// - reuse routing to compute effective root + stripped path
-// - check method allowed on route
-// - path traversal protection via isPathSafe
-// - if target is a directory -> 403 Forbidden
-// - unlink() the file and return 204 No Content on success
-// - on errors return appropriate HTML error responses
 
 void SocketManager::handleDelete(int fd,
 								 const Request &req,
@@ -73,8 +66,8 @@ void SocketManager::handleDelete(int fd,
 		return;
 	}
 
-	// Attempt unlink
-	if (::unlink(fullPath.c_str()) == 0)
+	// Attempt remove
+	if (std::remove(fullPath.c_str()) == 0)
 	{
 		Response res;
 		res.status_code = 204;

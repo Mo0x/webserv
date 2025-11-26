@@ -1,0 +1,266 @@
+2. Battery of tests (with commands)
+
+Assume:
+
+./webserv fulltest.conf
+
+
+Adjust ports / paths if needed.
+
+A. Basic static + error pages
+
+1. Root index
+
+curl -v http://127.0.0.1:8080/
+
+
+Expect: HTTP/1.x 200 and your index.html content.
+
+No chunked weirdness, no hanging.
+
+2. 404
+
+curl -v http://127.0.0.1:8080/does_not_exist
+
+
+Expect: 404 + your custom ./www/errors/404.html page.
+
+Check Content-Length is correct and connection eventually closes.
+
+B. Methods & 405 / unknown method
+
+3. Method-restricted route (/post-only/)
+
+# Wrong method – should hit 405
+curl -v -X GET http://127.0.0.1:8080/post-only/
+
+# Another wrong method
+curl -v -X DELETE http://127.0.0.1:8080/post-only/
+
+
+Expect: 405 Method Not Allowed, error page 405, and ideally Allow: POST header.
+
+# Valid method
+curl -v -X POST -d "ok" http://127.0.0.1:8080/post-only/
+
+
+Expect: 200 or 201, no crash, body handled as you decided.
+
+4. Unknown method (no crash allowed)
+
+printf 'FOO / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n' | nc 127.0.0.1 8080
+
+
+Expect: some error response (400 or 501), no segfault, no hang.
+
+C. DELETE & file operations (/delete/)
+
+Prepare:
+
+mkdir -p ./www/delete
+echo "TO BE DELETED" > ./www/delete/file.txt
+
+
+5. Before delete (should exist)
+
+curl -v http://127.0.0.1:8080/delete/file.txt
+
+
+6. Delete
+
+curl -v -X DELETE http://127.0.0.1:8080/delete/file.txt
+
+
+Expect: 200 or 204, and file removed from disk.
+
+7. After delete (should be 404)
+
+curl -v http://127.0.0.1:8080/delete/file.txt
+
+
+Expect: 404 page.
+
+Also hit the directory itself:
+
+curl -v http://127.0.0.1:8080/delete/
+
+
+Should list directory (autoindex on), and reflect deletion.
+
+D. Upload + body size limit (/upload/)
+
+You’ll adapt commands to match how you implemented uploads (raw body, multipart, filename from URI, etc.), but conceptually:
+
+8. Small upload (OK)
+
+echo "hello upload" > /tmp/small.txt
+
+curl -v -X POST \
+     --data-binary @/tmp/small.txt \
+     http://127.0.0.1:8080/upload/
+
+
+Then check upload directory:
+
+ls -l ./www/uploads
+
+
+And try to download something you uploaded (depending on how you name files):
+
+curl -v http://127.0.0.1:8080/upload/<whatever-filename-you-use>
+
+
+9. Near-limit upload (just under max_body_size)
+
+dd if=/dev/zero of=/tmp/okfile bs=1K count=900
+curl -v -X POST --data-binary @/tmp/okfile http://127.0.0.1:8080/upload/
+
+
+Expect success and no crash.
+
+10. Too-large upload → 413
+
+dd if=/dev/zero of=/tmp/bigfile bs=1K count=2048   # 2 MiB, > 1 MiB limit
+
+curl -v -X POST --data-binary @/tmp/bigfile http://127.0.0.1:8080/upload/
+
+
+Expect: 413 Request Entity Too Large + your 413 error page.
+
+Connection must not hang; no partial/half-written files left if you chose to discard.
+
+E. Autoindex & index logic
+
+11. Autoindex on directory
+
+mkdir -p ./www/autoindex
+echo "a" > ./www/autoindex/a.txt
+echo "b" > ./www/autoindex/b.txt
+
+curl -v http://127.0.0.1:8080/autoindex/
+
+
+Expect: HTML listing with links to a.txt and b.txt.
+
+Try in browser as well; this is explicitly checked in the scale.
+
+12. Directory vs. file
+
+curl -v http://127.0.0.1:8080/ → serves index.
+
+curl -v http://127.0.0.1:8080 (no trailing slash) → should behave similarly, not explode.
+
+F. Redirects
+
+13. Simple redirect /old/ → /
+
+curl -v http://127.0.0.1:8080/old/
+
+
+Expect: 301 (or 302 if that’s what you chose) and Location: /.
+
+curl -v -L http://127.0.0.1:8080/old/
+
+
+With -L, curl should follow and you end up with the root index page.
+
+G. CGI tests (/cgi-bin/)
+
+Put something like this in ./www/cgi-bin/env.py and make it executable:
+
+#!/usr/bin/env python3
+import os, sys
+
+print("Status: 200 OK")
+print("Content-Type: text/plain")
+print()
+
+print("Hello from CGI")
+print("--- ENV ---")
+for k in sorted(os.environ):
+    print("%s=%s" % (k, os.environ[k]))
+
+print("--- STDIN ---")
+body = sys.stdin.read()
+print(body)
+
+
+14. CGI GET
+
+curl -v "http://127.0.0.1:8080/cgi-bin/env.py?foo=bar&x=42"
+
+
+Check in the output:
+
+QUERY_STRING=foo=bar&x=42
+
+REQUEST_METHOD=GET
+
+PATH_INFO / SCRIPT_NAME etc. according to how you implemented the env.
+
+15. CGI POST (normal body)
+
+curl -v -X POST \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     --data "foo=bar&x=42" \
+     http://127.0.0.1:8080/cgi-bin/env.py
+
+
+REQUEST_METHOD=POST
+
+Body appears under --- STDIN ---.
+
+CONTENT_TYPE and CONTENT_LENGTH are set.
+
+16. CGI POST with chunked body
+
+Send raw HTTP:
+
+printf 'POST /cgi-bin/env.py HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked\r\nContent-Type: text/plain\r\n\r\n5\r\nhello\r\n0\r\n\r\n' | nc 127.0.0.1 8080
+
+
+CGI must receive unchunked body "hello" on stdin (your script prints it).
+
+No Transfer-Encoding header should be forwarded to the CGI; instead, it should see the final body and effective length (or no CONTENT_LENGTH if you chose that strategy).
+
+17. CGI error / timeout
+
+Create a script that loops forever or raises an exception and hit it:
+
+Your server should:
+
+Not crash.
+
+Respect your cgi_timeout_ms, kill the child, return some 5xx.
+
+Not leak file descriptors or leave zombies.
+
+H. Multiple ports & multiple servers
+
+Using multiport.conf:
+
+./webserv multiport.conf
+
+
+18. Different content on 8080 and 8081
+
+curl -v http://127.0.0.1:8080/
+curl -v http://127.0.0.1:8081/
+
+
+Make ./www/site_8080/index.html and ./www/site_8081/index.html clearly different (e.g. “I am port 8080 / 8081”) so you see which server answered, as requested in the original scale.
+
+19. Same port twice in config
+
+Introduce a deliberate bug in multiport.conf:
+
+server { listen 127.0.0.1:8080; ... }
+server { listen 127.0.0.1:8080; ... }  # duplicate
+
+
+Run:
+
+./webserv multiport.conf
+
+
+Server should refuse to start or clearly print an error; it must not start half-broken.

@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/26 17:38:48 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/26 17:46:23 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -131,7 +131,7 @@ void SocketManager::resetMultipartState(ClientState &st)
 	}
 	if (!st.mpCtx.currentFilePath.empty())
 	{
-		::unlink(st.mpCtx.currentFilePath.c_str());
+		std::remove(st.mpCtx.currentFilePath.c_str());
 		st.mpCtx.currentFilePath.clear();
 	}
 	st.mpCtx.currentFilePath.clear();
@@ -261,14 +261,14 @@ void SocketManager::cleanupMultipartFiles(ClientState &st, bool unlinkSaved)
 	if (!st.mpCtx.currentFilePath.empty())
 	{
 		if (unlinkSaved)
-			::unlink(st.mpCtx.currentFilePath.c_str());
+			std::remove(st.mpCtx.currentFilePath.c_str());
 		st.mpCtx.currentFilePath.clear();
 	}
 	if (unlinkSaved)
 	{
 		for (std::vector<std::string>::iterator it = st.mpCtx.savedNames.begin();
 			 it != st.mpCtx.savedNames.end(); ++it)
-			::unlink(it->c_str());
+			std::remove(it->c_str());
 		st.mpCtx.savedNames.clear();
 	}
 }
@@ -1468,7 +1468,7 @@ void SocketManager::onPartEndThunk(void* user)
 		if (cs->multipartError)
 		{
 			if (!cs->mpCtx.currentFilePath.empty())
-				::unlink(cs->mpCtx.currentFilePath.c_str());
+				std::remove(cs->mpCtx.currentFilePath.c_str());
 		}
 		else if (!cs->mpCtx.currentFilePath.empty())
 		{
