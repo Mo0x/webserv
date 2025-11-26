@@ -531,6 +531,8 @@ static std::string makeUploadFileName(const std::string &hint)
 			<< " stdout_r=" << st.cgi.stdout_r << std::endl;
 	std::cerr << "[fd " << fd << "] CGI dispatch : wd=" << st.cgi.workingDir.c_str() << "script=" << st.cgi.scriptFsPath.c_str() << std::endl;
 } */
+
+
 void SocketManager::startCgiDispatch(int fd,
 									 ClientState &st,
 									 const ServerConfig &server,

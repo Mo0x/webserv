@@ -1,9 +1,2 @@
-check bug when autoindex on on doesnt directory list:
-location /
-    {
-        root ./www;
-        index index.html;
-        methods GET;
-        autoindex on;
-    }
-cfg used
+Urgent fix weird bug where we download emptyfile if we access a directory E.G http://localhost:8080/ when no index and no autoindex on
+And for example http://localhost:8080/cgi-bin

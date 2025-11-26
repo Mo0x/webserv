@@ -522,8 +522,11 @@ void SocketManager::drainCgiOutput(int clientFd)
 		return;
 
 	ClientState &st = itc->second;
-
+	//big bug from here rn trying following right after guard
+/* 
 	if (st.phase != ClientState::CGI_RUNNING && !clientHasPendingWrite(st))
+		return; */
+	if (st.cgi.pid <= 0 && st.cgi.stdout_r == -1 && !clientHasPendingWrite(st))
 		return;
 
 	const ServerConfig &srv = m_serversConfig[m_clientToServerIndex[clientFd]];

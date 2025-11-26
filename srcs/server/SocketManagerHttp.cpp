@@ -241,55 +241,6 @@ bool SocketManager::detectMultipartBoundary(int fd, ClientState &st)
 		return true;
 }
 
-/**
- * parseSizeT
- *
- * Purpose:
- *   Parse a non-negative, decimal ASCII integer into a size_t, rejecting anything
- *   that is ambiguous, malformed, or would overflow size_t on this platform.
- *
- * Accepted input:
- *   - One or more digits '0'..'9'
- *   - No leading/trailing spaces or tabs
- *   - No sign ('+' or '-') and no base prefixes ('0x', etc.)
- *
- * Behavior:
- *   - On success: writes the value into `out` and returns true.
- *   - On failure: leaves `out` unspecified and returns false.
- *
- * Overflow handling (the “black magic” preprocessor bit):
- *   - We accumulate into an unsigned long long (`v`) to have as much headroom
- *     as possible while multiplying by 10 and adding the next digit.
- *   - To detect overflow *portably* without compiler builtins, we compare `v`
- *     against the maximum representable value of `size_t`.
- *   - Unfortunately, there is no standard macro for “max size_t as ULL literal”
- *     in C++98, so we do a conservative check guarded by a preprocessor test:
- *
- *       #if ULONG_MAX == 18446744073709551615ULL
- *           if (v > (unsigned long long) (~(size_t)0)) return false;
- *       #endif
- *
- *     Explanation:
- *       - On typical LP64 platforms (Linux/macOS x86_64), `unsigned long` is 64-bit,
- *         so `ULONG_MAX` equals 2^64 - 1, which *also* implies `size_t` is 64-bit.
- *         In that case, we can safely compare `v` to the all-ones bit pattern for size_t,
- *         i.e. `~(size_t)0`. If `v` exceeds that, parsing would overflow `size_t` → reject.
- *       - On 32-bit targets (or other ABIs where `size_t` isn’t 64-bit), this branch
- *         is *not* compiled. That avoids making incorrect assumptions about the width
- *         of `size_t` (and keeps the code C++98-portable).
- *       - Why not use SIZE_MAX? It’s from C99’s <stdint.h>/<cstdint> and not guaranteed
- *         in strict C++98 environments; the above check stays compatible.
- *
- * Edge cases:
- *   - Empty string → false
- *   - Any non-digit character → false
- *   - Very large sequences of digits that don’t fit in size_t → false (caught by check)
- *   - “000123” is accepted (normal decimal semantics)
- *
- * Complexity:
- *   - O(n) over the number of characters; no allocations.
- */
-
 static bool parseSizeT(const std::string &s, size_t &out)
 {
 	// Decimal non-negative; reject leading +/-, hex, spaces.
