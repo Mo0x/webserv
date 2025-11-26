@@ -1,8 +1,0 @@
-# raw traversal → 403 (server-side guard)
-printf 'GET /../ HTTP/1.1\r\nHost: localhost\r\n\r\n' | nc 127.0.0.1 8081
-printf 'GET /a/../ HTTP/1.1\r\nHost: localhost\r\n\r\n' | nc 127.0.0.1 8081
-
-# encoded traversal → 403
-curl -i 'http://127.0.0.1:8081/%2e%2e/'
-curl -i 'http://127.0.0.1:8081/a/%2e%2e/b'
-

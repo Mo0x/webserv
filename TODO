@@ -1,0 +1,9 @@
+check bug when autoindex on on doesnt directory list:
+location /
+    {
+        root ./www;
+        index index.html;
+        methods GET;
+        autoindex on;
+    }
+cfg used
