@@ -6,7 +6,7 @@
 /*   By: mgovinda <mgovinda@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/04/13 18:37:34 by mgovinda          #+#    #+#             */
-/*   Updated: 2025/11/25 21:52:45 by mgovinda         ###   ########.fr       */
+/*   Updated: 2025/11/26 17:38:48 by mgovinda         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -366,85 +366,6 @@ void SocketManager::initPoll()
 		pfd.events = POLLIN;
 		pfd.revents = 0;
 		m_pollfds.push_back(pfd);
-	}
-}
-
-void SocketManager::run()
-{
-	initPoll();
-
-	while (!g_stop)
-	{
-		struct pollfd* pbase = m_pollfds.empty() ? NULL : &m_pollfds[0];
-		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), 100); // changed from -1 to 100 for the time out
-		if (rc < 0) 
-		{
-			if (errno == EINTR) 
-			{
-				if (g_stop)
-					break;
-				continue;
-			}
-			std::cerr << "poll() error: " << std::strerror(errno) << std::endl;
-			continue;
-		}
-		if (rc == 0)
-		{
-			checkCgiTimeouts();
-			continue;
-		}
-
-		std::vector< std::pair<int, short> > events;
-		events.reserve(m_pollfds.size());
-		for (size_t i = 0; i < m_pollfds.size(); ++i) 
-		{
-			if (m_pollfds[i].revents != 0)
-				events.push_back(std::make_pair(m_pollfds[i].fd, m_pollfds[i].revents));
-		}
-		// event driver
-		for (size_t i = 0; i < events.size(); ++i)
-		{
-			int   fd      = events[i].first;
-			short revents = events[i].second;
-
-			if (revents & POLLIN) 
-			{
-				if (isListeningSocket(fd)) 
-				{
-					handleNewConnection(fd);
-				} 
-				else if (isCgiStdout(fd)) 
-				{
-					handleCgiReadable(fd);
-				} 
-				else 
-				{
-					handleClientRead(fd);
-				}
-			}
-			if (revents & POLLOUT) 
-			{
-				if (isCgiStdin(fd)) 
-				{
-					handleCgiWritable(fd);
-				} else 
-				{
-					handleClientWrite(fd);
-				}
-			}
-			if (revents & (POLLERR | POLLHUP | POLLNVAL)) 
-			{
-				if (isCgiStdout(fd) || isCgiStdin(fd)) 
-				{
-					handleCgiPipeError(fd);
-				}
-				else
-				{
-					handleClientDisconnect(fd);
-				}
-			}
-		}
-		checkCgiTimeouts();
 	}
 }
 
@@ -1568,4 +1489,83 @@ void SocketManager::onPartEndThunk(void* user)
 
 	std::cerr << "[multipart] part end (count=" << static_cast<unsigned long>(cs ? cs->mpCtx.partCount : 0u)
 	<< "totalBytes=" << static_cast<unsigned long>(cs ? cs->debugMultipartBytes : 0u) << ")" << std::endl;
+}
+
+void SocketManager::run()
+{
+	initPoll();
+
+	while (!g_stop)
+	{
+		struct pollfd* pbase = m_pollfds.empty() ? NULL : &m_pollfds[0];
+		int rc = ::poll(pbase, static_cast<nfds_t>(m_pollfds.size()), 100); // changed from -1 to 100 for the time out
+		if (rc < 0) 
+		{
+			if (errno == EINTR) 
+			{
+				if (g_stop)
+					break;
+				continue;
+			}
+			std::cerr << "poll() error: " << std::strerror(errno) << std::endl;
+			continue;
+		}
+		if (rc == 0)
+		{
+			checkCgiTimeouts();
+			continue;
+		}
+
+		std::vector< std::pair<int, short> > events;
+		events.reserve(m_pollfds.size());
+		for (size_t i = 0; i < m_pollfds.size(); ++i) 
+		{
+			if (m_pollfds[i].revents != 0)
+				events.push_back(std::make_pair(m_pollfds[i].fd, m_pollfds[i].revents));
+		}
+		// event driver
+		for (size_t i = 0; i < events.size(); ++i)
+		{
+			int   fd      = events[i].first;
+			short revents = events[i].second;
+
+			if (revents & POLLIN) 
+			{
+				if (isListeningSocket(fd)) 
+				{
+					handleNewConnection(fd);
+				} 
+				else if (isCgiStdout(fd)) 
+				{
+					handleCgiReadable(fd);
+				} 
+				else 
+				{
+					handleClientRead(fd);
+				}
+			}
+			if (revents & POLLOUT) 
+			{
+				if (isCgiStdin(fd)) 
+				{
+					handleCgiWritable(fd);
+				} else 
+				{
+					handleClientWrite(fd);
+				}
+			}
+			if (revents & (POLLERR | POLLHUP | POLLNVAL)) 
+			{
+				if (isCgiStdout(fd) || isCgiStdin(fd)) 
+				{
+					handleCgiPipeError(fd);
+				}
+				else
+				{
+					handleClientDisconnect(fd);
+				}
+			}
+		}
+		checkCgiTimeouts();
+	}
 }

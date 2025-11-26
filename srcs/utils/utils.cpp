@@ -3,6 +3,7 @@
 
 #include "SocketManager.hpp"
 #include "utils.hpp"
+#include <ctime>
 
 std::string to_string(size_t val)
 {
@@ -43,9 +44,12 @@ std::string joinPaths(const std::string &a, const std::string &b)
 
 unsigned long long now_ms()
 {
-	struct timeval tv;
-	gettimeofday(&tv, 0);
-	return static_cast<unsigned long long>(tv.tv_sec * 1000ULL + (tv.tv_usec / 1000ULL));
+	std::time_t t = std::time(NULL);
+
+	if (t == (std::time_t)-1)
+		return 0ULL;
+
+	return static_cast<unsigned long long>(t) * 1000ULL;
 }
 
 /* version 2.0 of the routing logic because request with route like "/upload" werent 
@@ -140,10 +144,10 @@ std::string generateAutoIndexPage(const std::string &dirPath, const std::string 
 
 std::string toUpperCopy(const std::string& str)
 {
-    std::string ret(str);
-    for (size_t i = 0; i < ret.size(); ++i)
-        ret[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(ret[i])));
-    return ret;
+	std::string ret(str);
+	for (size_t i = 0; i < ret.size(); ++i)
+		ret[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(ret[i])));
+	return ret;
 }
 
 // if GET is allowed, we must allow the HEAD method too : they share the same semantics; HEAD just omits the body
@@ -191,10 +195,10 @@ bool shouldCloseAfterThisResponse(int status, bool headers_complete, bool body_w
 
 std::string trimCopy(const std::string &s)
 {
-    size_t b = 0, e = s.size();
-    while (b < e && (s[b] == ' ' || s[b] == '\t')) ++b;
-    while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t')) --e;
-    return s.substr(b, e - b);
+	size_t b = 0, e = s.size();
+	while (b < e && (s[b] == ' ' || s[b] == '\t')) ++b;
+	while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t')) --e;
+	return s.substr(b, e - b);
 }
 
 std::string getMimeTypeFromPath(const std::string& path) 
@@ -232,38 +236,38 @@ std::string getMimeTypeFromPath(const std::string& path)
 
 void countHeaderNames(const std::string &rawHeaders, std::map<std::string, size_t> &outCounts)
 {
-    outCounts.clear();
-    size_t pos = 0;
-    while (pos < rawHeaders.size())
-    {
-        size_t nl = rawHeaders.find("\r\n", pos);
-        if (nl == std::string::npos) nl = rawHeaders.size();
-        if (nl == pos) break; // empty line (defensive)
+	outCounts.clear();
+	size_t pos = 0;
+	while (pos < rawHeaders.size())
+	{
+		size_t nl = rawHeaders.find("\r\n", pos);
+		if (nl == std::string::npos) nl = rawHeaders.size();
+		if (nl == pos) break; // empty line (defensive)
 
-        const std::string line = rawHeaders.substr(pos, nl - pos);
+		const std::string line = rawHeaders.substr(pos, nl - pos);
 
-        // only header lines have ':'
-        size_t colon = line.find(':');
-        if (colon != std::string::npos)
-        {
-            std::string name = line.substr(0, colon);
+		// only header lines have ':'
+		size_t colon = line.find(':');
+		if (colon != std::string::npos)
+		{
+			std::string name = line.substr(0, colon);
 
-            // trim trailing spaces/tabs in header-name
-            while (!name.empty() && (name[name.size() - 1] == ' ' || name[name.size() - 1] == '\t'))
-                name.erase(name.size() - 1);
+			// trim trailing spaces/tabs in header-name
+			while (!name.empty() && (name[name.size() - 1] == ' ' || name[name.size() - 1] == '\t'))
+				name.erase(name.size() - 1);
 
-            // lowercase ASCII
-            for (size_t i = 0; i < name.size(); ++i)
-            {
-                unsigned char c = static_cast<unsigned char>(name[i]);
-                if (c >= 'A' && c <= 'Z')
-                    name[i] = static_cast<char>(c - 'A' + 'a');
-            }
-            ++outCounts[name];
-        }
+			// lowercase ASCII
+			for (size_t i = 0; i < name.size(); ++i)
+			{
+				unsigned char c = static_cast<unsigned char>(name[i]);
+				if (c >= 'A' && c <= 'Z')
+					name[i] = static_cast<char>(c - 'A' + 'a');
+			}
+			++outCounts[name];
+		}
 
-        pos = (nl == rawHeaders.size()) ? nl : nl + 2; 
-    }
+		pos = (nl == rawHeaders.size()) ? nl : nl + 2; 
+	}
 }
 
 std::string toLowerCopy(const std::string &str)
