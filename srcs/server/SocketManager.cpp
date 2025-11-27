@@ -54,18 +54,18 @@ static const char *phaseToStr(ClientState::Phase p)
 {
 	switch (p)
 	{
-	case ClientState::READING_HEADERS:
-		return "READING_HEADERS";
-	case ClientState::READING_BODY:
-		return "READING_BODY";
-	case ClientState::READY_TO_DISPATCH:
-		return "READY_TO_DISPATCH";
-	case ClientState::SENDING_RESPONSE:
-		return "SENDING_RESPONSE";
-	case ClientState::CGI_RUNNING:
-		return "CGI_RUNNING";
-	case ClientState::CLOSED:
-		return "CLOSED";
+		case ClientState::READING_HEADERS:
+			return "READING_HEADERS";
+		case ClientState::READING_BODY:
+			return "READING_BODY";
+		case ClientState::READY_TO_DISPATCH:
+			return "READY_TO_DISPATCH";
+		case ClientState::SENDING_RESPONSE:
+			return "SENDING_RESPONSE";
+		case ClientState::CGI_RUNNING:
+			return "CGI_RUNNING";
+		case ClientState::CLOSED:
+			return "CLOSED";
 	}
 	return "?";
 }

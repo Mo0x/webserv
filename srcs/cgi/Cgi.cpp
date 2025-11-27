@@ -537,7 +537,6 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd,
 	finalizeAndQueue(clientFd, st.req, res, /*body_expected=*/false,
 					 /*body_fully_consumed=*/true);
 
-	// Inject duplicate Set-Cookie lines (Response::headers can't hold dupes)
 	if (!setCookieLines.empty())
 	{
 		inject_header_lines_before_body(st.writeBuffer, setCookieLines);
@@ -546,7 +545,6 @@ bool SocketManager::parseCgiHeaders(ClientState &st, int clientFd,
 	}
 
 	st.cgi.headersParsed = true;
-	// Cache normalized headers for later checks if you want:
 	st.cgi.cgiHeaders.swap(merged);
 	return true;
 }
