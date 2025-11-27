@@ -2,20 +2,17 @@
 import os
 import sys
 
+body_lines = [
+    "Hello from CGI debug script!",
+    "-----------------------------",
+    "REQUEST_METHOD = " + str(os.environ.get("REQUEST_METHOD")),
+    "QUERY_STRING   = " + str(os.environ.get("QUERY_STRING")),
+    "CONTENT_TYPE   = " + str(os.environ.get("CONTENT_TYPE")),
+    "CONTENT_LENGTH = " + str(os.environ.get("CONTENT_LENGTH")),
+]
+body = "\n".join(body_lines) + "\n"
+
 print("Content-Type: text/plain")
+print(f"Content-Length: {len(body)}")
 print()
-
-print("Hello from CGI debug script!")
-print("-----------------------------")
-print("REQUEST_METHOD =", os.environ.get("REQUEST_METHOD"))
-print("QUERY_STRING   =", os.environ.get("QUERY_STRING"))
-print("CONTENT_TYPE   =", os.environ.get("CONTENT_TYPE"))
-print("CONTENT_LENGTH =", os.environ.get("CONTENT_LENGTH"))
-
-if os.environ.get("REQUEST_METHOD") == "POST":
-    length = int(os.environ.get("CONTENT_LENGTH") or "0")
-    body = sys.stdin.read(length)
-    print()
-    print("BODY START")
-    print(body)
-    print("BODY END")
+print(body, end="")

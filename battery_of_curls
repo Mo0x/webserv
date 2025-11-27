@@ -164,25 +164,6 @@ curl -v -L http://127.0.0.1:8080/old/
 
 With -L, curl should follow and you end up with the root index page.
 
-G. CGI tests (/cgi-bin/)
-
-Put something like this in ./www/cgi-bin/env.py and make it executable:
-
-#!/usr/bin/env python3
-import os, sys
-
-print("Status: 200 OK")
-print("Content-Type: text/plain")
-print()
-
-print("Hello from CGI")
-print("--- ENV ---")
-for k in sorted(os.environ):
-    print("%s=%s" % (k, os.environ[k]))
-
-print("--- STDIN ---")
-body = sys.stdin.read()
-print(body)
 
 
 14. CGI GET
@@ -264,3 +245,4 @@ Run:
 
 
 Server should refuse to start or clearly print an error; it must not start half-broken.
+
